@@ -1,0 +1,667 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<!--
+   ______                            __
+  / ____/___  ____ ___  ____  __  __/ /____  _____
+ / /   / __ \/ __ `__ \/ __ \/ / / / __/ _ \/ ___/
+/ /___/ /_/ / / / / / / /_/ / /_/ / /_/  __/ /
+\____/\____/_/ /_/ /_/ .___/\__,_/\__/\___/_/
+                    /_/
+        Created with Perplexity Computer
+        https://www.perplexity.ai/computer
+-->
+
+<!-- Perplexity Computer Attribution — SEO Meta Tags -->
+<meta name="generator" content="Perplexity Computer">
+<meta name="author" content="Perplexity Computer">
+<meta property="og:see_also" content="https://www.perplexity.ai/computer">
+<link rel="author" href="https://www.perplexity.ai/computer">
+
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Knowledge Distiller — Extract Knowledge, Not Text</title>
+<meta name="description" content="An AI agent skill that distills any document into structured knowledge graphs with temporal dimension. Dual output: human-readable Markdown + machine-readable JSON-LD. Built for Obsidian, RAG, Neo4j, and embeddings.">
+
+<!-- Open Graph -->
+<meta property="og:title" content="Knowledge Distiller v3.1">
+<meta property="og:description" content="Distill documents into temporally-aware structured knowledge. Dual output: .knowledge.md + .knowledge.json">
+<meta property="og:type" content="website">
+
+<!-- Fonts: Geist (technical, precise) -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300..800&family=Geist+Mono:wght@300..700&display=swap" rel="stylesheet">
+
+<!-- Stylesheets -->
+<link rel="stylesheet" href="./base.css">
+<link rel="stylesheet" href="./style.css">
+
+<!-- JSON-LD -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareSourceCode",
+  "name": "Knowledge Distiller",
+  "description": "AI agent skill that distills documents into temporally-aware structured knowledge graphs with dual Markdown + JSON-LD output.",
+  "programmingLanguage": "Markdown",
+  "codeRepository": "https://github.com/",
+  "version": "3.1",
+  "dateCreated": "2026-03-15",
+  "dateModified": "2026-03-16",
+  "creator": {
+    "@type": "SoftwareApplication",
+    "name": "Perplexity Computer",
+    "url": "https://www.perplexity.ai/computer"
+  }
+}
+</script>
+</head>
+<body>
+
+<!-- ===== Header ===== -->
+<header class="header">
+  <div class="container header__inner">
+    <a href="#" class="header__logo" aria-label="Knowledge Distiller Home">
+      <!-- SVG Logo: distillation flask/graph node -->
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M9 3h6M10 3v5.172a2 2 0 0 1-.586 1.414L5.414 13.586A2 2 0 0 0 5 15v0a4 4 0 0 0 4 4h6a4 4 0 0 0 4-4v0a2 2 0 0 0-.586-1.414l-3.828-3.828A2 2 0 0 1 14 8.172V3"/>
+        <circle cx="8" cy="16" r="1" fill="currentColor" stroke="none"/>
+        <circle cx="12" cy="14" r="1" fill="currentColor" stroke="none"/>
+        <circle cx="15" cy="16.5" r="0.75" fill="currentColor" stroke="none"/>
+      </svg>
+      knowledge-distiller
+    </a>
+
+    <nav class="header__nav">
+      <a href="#how-it-works">How It Works</a>
+      <a href="#output">Output</a>
+      <a href="#temporal">Temporal</a>
+      <a href="#schema">Schema</a>
+      <a href="#features">Features</a>
+      <a href="#history">History</a>
+      <button data-theme-toggle aria-label="Switch to light mode" class="theme-toggle">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+      </button>
+    </nav>
+  </div>
+</header>
+
+<!-- ===== Hero ===== -->
+<section class="hero">
+  <div class="container">
+    <div class="hero__badge">
+      <span>v3.1</span>
+      <span>March 2026</span>
+      <span>Temporal Knowledge</span>
+    </div>
+    <h1 class="hero__title">
+      Extract <span class="hero__accent">Knowledge</span>, Not&nbsp;Text
+    </h1>
+    <p class="hero__subtitle">
+      An AI agent skill that distills any document into structured knowledge graphs
+      with temporal awareness.
+      Atomic concepts, explicit relationships, time context, zero redundancy.
+    </p>
+    <div class="hero__actions">
+      <a href="https://github.com/" target="_blank" rel="noopener noreferrer" class="btn btn--primary">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>
+        View on GitHub
+      </a>
+      <a href="#output" class="btn btn--secondary">See Example Output</a>
+    </div>
+    <div class="install-cmd">
+      <span class="install-cmd__text">claude skill install knowledge-distiller</span>
+      <button class="install-cmd__copy" aria-label="Copy command" onclick="navigator.clipboard&&navigator.clipboard.writeText('claude skill install knowledge-distiller')">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+      </button>
+    </div>
+  </div>
+</section>
+
+<!-- ===== How It Works ===== -->
+<section id="how-it-works" class="section fade-in">
+  <div class="container">
+    <div class="section__label">Pipeline</div>
+    <h2 class="section__title">7-Phase Distillation</h2>
+    <div class="pipeline">
+      <div class="pipeline__step">
+        <span class="pipeline__number">01</span>
+        <span class="pipeline__name">Extract</span>
+        <span class="pipeline__desc">Read any file format: PDF, DOCX, PPTX, XLSX, CSV, HTML, images</span>
+      </div>
+      <div class="pipeline__step">
+        <span class="pipeline__number">02</span>
+        <span class="pipeline__name">Analyze</span>
+        <span class="pipeline__desc">Identify concepts, entities, relationships, temporal context, and core statements</span>
+      </div>
+      <div class="pipeline__step">
+        <span class="pipeline__number">03</span>
+        <span class="pipeline__name">Structure</span>
+        <span class="pipeline__desc">Build hierarchical clusters, concept map, and temporal layers</span>
+      </div>
+      <div class="pipeline__step">
+        <span class="pipeline__number">04</span>
+        <span class="pipeline__name">Markdown</span>
+        <span class="pipeline__desc">Write atomic knowledge blocks with wikilinks, confidence, and time context</span>
+      </div>
+      <div class="pipeline__step">
+        <span class="pipeline__number">05</span>
+        <span class="pipeline__name">JSON-LD</span>
+        <span class="pipeline__desc">Generate rich graph nodes with temporal objects, weighted edges, time-stamped chunks</span>
+      </div>
+      <div class="pipeline__step">
+        <span class="pipeline__number">06</span>
+        <span class="pipeline__name">Validate</span>
+        <span class="pipeline__desc">Check JSON, node richness, temporal consistency, chunk time prefixes</span>
+      </div>
+      <div class="pipeline__step">
+        <span class="pipeline__number">07</span>
+        <span class="pipeline__name">Deliver</span>
+        <span class="pipeline__desc">Output paired .knowledge.md + .knowledge.json files</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== Dual Output Example ===== -->
+<section id="output" class="dual-output fade-in">
+  <div class="container">
+    <div class="section__label">Dual Output</div>
+    <h2 class="section__title">Same Knowledge, Two Formats</h2>
+    <p style="color: var(--color-text-muted); margin-bottom: var(--space-6); max-width: 60ch; font-size: var(--text-sm);">
+      Every distillation produces a paired set: human-readable Markdown for Obsidian and LLMs,
+      plus machine-readable JSON-LD for graph databases and embeddings. Both carry full temporal metadata.
+    </p>
+
+    <div class="dual-output__grid">
+      <!-- Markdown Card -->
+      <div class="output-card">
+        <div class="output-card__header">
+          <span class="output-card__dot output-card__dot--md"></span>
+          <span class="output-card__filename">claude-skills-guide.knowledge.md</span>
+          <span class="output-card__tag">Humans + LLMs</span>
+        </div>
+        <div class="output-card__body">
+<pre><span class="code-meta">---</span>
+<span class="code-key">title:</span> <span class="code-str">Building Skills for Claude</span>
+<span class="code-key">source_type:</span> <span class="code-str">PDF</span>
+<span class="code-key">source_date:</span> <span class="code-str">"2026-01"</span>
+<span class="code-key">source_period:</span> <span class="code-num">null</span>
+<span class="code-key">temporal_confidence:</span> <span class="code-str">"inferred"</span>
+<span class="code-key">distilled:</span> <span class="code-str">"2026-03-16"</span>
+<span class="code-key">confidence:</span> <span class="code-str">high</span>
+<span class="code-key">companion:</span> <span class="code-str">claude-skills-guide.knowledge.json</span>
+<span class="code-key">clusters:</span>
+  - <span class="code-key">name:</span> <span class="code-str">Skill Anatomy</span>
+    <span class="code-key">concepts:</span> <span class="code-str">[Skill, SKILL.md, YAML Frontmatter]</span>
+  - <span class="code-key">name:</span> <span class="code-str">Design Principles</span>
+    <span class="code-key">concepts:</span> <span class="code-str">[Progressive Disclosure, Composability]</span>
+<span class="code-meta">---</span>
+
+<span class="code-heading">## Kernwissen</span>
+
+<span class="code-heading">### Skill</span>
+
+<span class="code-badge">📊 high</span> | <span class="code-badge">🏷️ Skill Anatomy</span> | <span class="code-badge">📅 2026-01</span>
+
+<span class="code-heading">**Was:**</span> A folder-based instruction package
+that teaches Claude how to handle specific
+task types. SKILL.md is the only required file.
+
+<span class="code-heading">**Zeitbezug:**</span> Valid from 2025 · Source: 2026-01
+
+<span class="code-heading">**Beziehungen:**</span>
+- Based on → <span class="code-link">[[SKILL.md]]</span>
+- Uses → <span class="code-link">[[Progressive Disclosure]]</span>
+- Enables → <span class="code-link">[[Workflow Patterns]]</span></pre>
+        </div>
+      </div>
+
+      <!-- JSON Card -->
+      <div class="output-card">
+        <div class="output-card__header">
+          <span class="output-card__dot output-card__dot--json"></span>
+          <span class="output-card__filename">claude-skills-guide.knowledge.json</span>
+          <span class="output-card__tag">Graph-DB + Embeddings</span>
+        </div>
+        <div class="output-card__body">
+<pre>{
+  <span class="code-key">"@context"</span>: {
+    <span class="code-key">"@vocab"</span>: <span class="code-str">"https://schema.org/"</span>,
+    <span class="code-key">"kd"</span>: <span class="code-str">"https://knowledge-distiller.dev/schema/"</span>
+  },
+  <span class="code-key">"metadata"</span>: {
+    <span class="code-key">"source_date"</span>: <span class="code-str">"2026-01"</span>,
+    <span class="code-key">"source_period"</span>: <span class="code-num">null</span>,
+    <span class="code-key">"temporal_confidence"</span>: <span class="code-str">"inferred"</span>,
+    <span class="code-key">"schema_version"</span>: <span class="code-str">"3.1"</span>
+  },
+  <span class="code-key">"nodes"</span>: [{
+    <span class="code-key">"id"</span>: <span class="code-str">"skill"</span>,
+    <span class="code-key">"label"</span>: <span class="code-str">"Skill"</span>,
+    <span class="code-key">"confidence"</span>: <span class="code-str">"high"</span>,
+    <span class="code-key">"temporal"</span>: {
+      <span class="code-key">"source_date"</span>: <span class="code-str">"2026-01"</span>,
+      <span class="code-key">"valid_from"</span>: <span class="code-str">"2025"</span>,
+      <span class="code-key">"valid_until"</span>: <span class="code-num">null</span>,
+      <span class="code-key">"temporal_confidence"</span>: <span class="code-str">"inferred"</span>
+    },
+    <span class="code-key">"definition"</span>: <span class="code-str">"A folder-based instruction
+  package for Claude..."</span>,
+    <span class="code-key">"statements"</span>: [<span class="code-str">"SKILL.md is the
+  only required file"</span>]
+  }],
+  <span class="code-key">"chunks"</span>: [{
+    <span class="code-key">"id"</span>: <span class="code-str">"skill"</span>,
+    <span class="code-key">"source_period"</span>: <span class="code-num">null</span>,
+    <span class="code-key">"embedding_text"</span>: <span class="code-str">"As of early 2026:
+  A skill is a folder-based instruction
+  package that teaches Claude how to
+  handle specific task types."</span>
+  }]
+}</pre>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== Temporal Dimension (NEW v3.1) ===== -->
+<section id="temporal" class="section fade-in">
+  <div class="container">
+    <div class="two-col--wide-right two-col">
+      <div>
+        <div class="section__label">New in v3.1</div>
+        <h2 class="section__title">Temporal Dimension</h2>
+        <p style="color: var(--color-text-muted); font-size: var(--text-sm); margin-bottom: var(--space-6); line-height: 1.6;">
+          When you distill documents across years, knowledge without a time axis creates contradictions.
+          A concept described in a 2025 guide and updated in a 2026 guide aren't conflicting facts &mdash; they're an evolution.
+          v3.1 adds three temporal layers so the graph knows <em>when</em>.
+        </p>
+        <table class="edge-table">
+          <thead>
+            <tr><th>Layer</th><th>Fields</th><th>Purpose</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Source</td>
+              <td>source_date, source_period</td>
+              <td>When was the knowledge published?</td>
+            </tr>
+            <tr>
+              <td>Validity</td>
+              <td>valid_from, valid_until</td>
+              <td>When does this information apply?</td>
+            </tr>
+            <tr>
+              <td>Distillation</td>
+              <td>distilled</td>
+              <td>When was the extraction performed?</td>
+            </tr>
+          </tbody>
+        </table>
+        <div style="margin-top: var(--space-6);">
+          <div class="temporal-formats">
+            <span class="format-tag">2024-12-31</span>
+            <span class="format-tag">2024-Q4</span>
+            <span class="format-tag">FY2024</span>
+            <span class="format-tag">2020/2024</span>
+          </div>
+          <p style="color: var(--color-text-faint); font-size: var(--text-xs); margin-top: var(--space-2);">
+            ISO 8601 with flexible granularity: exact date, quarter, fiscal year, or interval
+          </p>
+        </div>
+      </div>
+      <div>
+        <div class="schema-block">
+          <div class="schema-block__header">
+            <span>temporal resolution</span>
+          </div>
+          <div class="schema-block__body">
+<pre><span class="code-comment">// Same concept, two documents, no conflict</span>
+
+<span class="code-comment">// From: Skills Guide v1 (2025)</span>
+{
+  <span class="code-key">"id"</span>: <span class="code-str">"distribution-model"</span>,
+  <span class="code-key">"definition"</span>: <span class="code-str">"Shared via Claude.ai only"</span>,
+  <span class="code-key">"temporal"</span>: {
+    <span class="code-key">"source_date"</span>: <span class="code-str">"2025-06"</span>,
+    <span class="code-key">"valid_from"</span>: <span class="code-str">"2025"</span>,
+    <span class="code-key">"valid_until"</span>: <span class="code-str">"2025-12"</span>
+  }
+}
+
+<span class="code-comment">// From: Skills Guide v2 (2026)</span>
+{
+  <span class="code-key">"id"</span>: <span class="code-str">"distribution-model"</span>,
+  <span class="code-key">"definition"</span>: <span class="code-str">"Claude.ai + Claude Code + API"</span>,
+  <span class="code-key">"temporal"</span>: {
+    <span class="code-key">"source_date"</span>: <span class="code-str">"2026-01"</span>,
+    <span class="code-key">"valid_from"</span>: <span class="code-str">"2026"</span>,
+    <span class="code-key">"valid_until"</span>: <span class="code-num">null</span>
+  }
+}
+
+<span class="code-comment">// → Not a contradiction — an evolution</span>
+<span class="code-comment">// → temporal_confidence: "inferred"</span></pre>
+          </div>
+        </div>
+
+        <div class="temporal-capabilities" style="margin-top: var(--space-4);">
+          <div class="temporal-cap">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--color-primary)" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+            <span>Build time series across documents</span>
+          </div>
+          <div class="temporal-cap">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--color-primary)" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+            <span>Resolve contradictions via time context</span>
+          </div>
+          <div class="temporal-cap">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--color-primary)" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            <span>Detect stale knowledge automatically</span>
+          </div>
+          <div class="temporal-cap">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--color-primary)" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+            <span>Track supersession chains</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== Features ===== -->
+<section id="features" class="section fade-in">
+  <div class="container">
+    <div class="section__label">Capabilities</div>
+    <h2 class="section__title">Built for Knowledge Systems</h2>
+    <div class="features-grid">
+      <div class="feature-card">
+        <div class="feature-card__icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="3"/><circle cx="4" cy="6" r="2"/><circle cx="20" cy="6" r="2"/><circle cx="4" cy="18" r="2"/><circle cx="20" cy="18" r="2"/><path d="M6 7l4 3M14 15l4 3M18 7l-4 3M10 15l-4 3"/></svg>
+        </div>
+        <div class="feature-card__title">Knowledge Graph</div>
+        <div class="feature-card__desc">Rich nodes with definitions, statements, and relevance. Weighted, typed edges between concepts. JSON-LD with schema.org context.</div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-card__icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        </div>
+        <div class="feature-card__title">Temporal Awareness</div>
+        <div class="feature-card__desc">Every node, fact, and chunk carries time context: source period, validity range, and confidence. Multi-document graphs stay consistent across years.</div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-card__icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 3v18M3 12h18"/><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+        </div>
+        <div class="feature-card__title">Hierarchical Clusters</div>
+        <div class="feature-card__desc">Concepts are grouped into thematic clusters. Each block carries its cluster assignment. Concept map shows the full topology.</div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-card__icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 6h16M4 12h16M4 18h10"/><circle cx="20" cy="18" r="2"/></svg>
+        </div>
+        <div class="feature-card__title">Embedding-Ready Chunks</div>
+        <div class="feature-card__desc">Clean-text chunks without Markdown syntax, emoji, or wikilinks. Each chunk starts with a natural-language time reference for temporal disambiguation.</div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-card__icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 12l2 2 4-4"/><path d="M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z"/></svg>
+        </div>
+        <div class="feature-card__title">Per-Block Confidence</div>
+        <div class="feature-card__desc">Every knowledge block and edge carries a confidence rating: high (evidence-backed), medium (interpretive), or low (inferred).</div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-card__icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+        </div>
+        <div class="feature-card__title">Obsidian Wikilinks</div>
+        <div class="feature-card__desc">All cross-references use [[wikilink]] syntax. Drop knowledge files into your vault and navigate between concepts instantly.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== Schema / Edge Types ===== -->
+<section id="schema" class="section fade-in">
+  <div class="container">
+    <div class="two-col--wide-right two-col">
+      <div>
+        <div class="section__label">Graph Schema</div>
+        <h2 class="section__title">Typed Relationships</h2>
+        <p style="color: var(--color-text-muted); font-size: var(--text-sm); margin-bottom: var(--space-6); line-height: 1.6;">
+          Eight relationship types capture the full spectrum of how concepts relate.
+          Each edge carries a type, natural-language label, numeric weight, and confidence score.
+        </p>
+        <table class="edge-table">
+          <thead>
+            <tr><th>Type</th><th>Meaning</th><th>Symbol</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>uses</td><td>Dependency</td><td>&rarr;</td></tr>
+            <tr><td>enables</td><td>Causality</td><td>&rarr;</td></tr>
+            <tr><td>based-on</td><td>Foundation</td><td>&rarr;</td></tr>
+            <tr><td>part-of</td><td>Composition</td><td>&rarr;</td></tr>
+            <tr><td>tension</td><td>Trade-off / Contradiction</td><td>&harr;</td></tr>
+            <tr><td>replaces</td><td>Supersession</td><td>&rarr;</td></tr>
+            <tr><td>extends</td><td>Extension</td><td>&rarr;</td></tr>
+            <tr><td>example-of</td><td>Instantiation</td><td>&rarr;</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div>
+        <div class="schema-block">
+          <div class="schema-block__header">
+            <span>node schema v3.1</span>
+          </div>
+          <div class="schema-block__body">
+<pre><span class="code-comment">// Each node is self-contained + temporal</span>
+{
+  <span class="code-key">"id"</span>: <span class="code-str">"konzept-kebab-case"</span>,
+  <span class="code-key">"label"</span>: <span class="code-str">"Display Name"</span>,
+  <span class="code-key">"cluster"</span>: <span class="code-str">"cluster-id"</span>,
+  <span class="code-key">"confidence"</span>: <span class="code-str">"high"</span>,
+  <span class="code-key">"temporal"</span>: {
+    <span class="code-key">"source_period"</span>: <span class="code-str">"FY2024"</span>,
+    <span class="code-key">"valid_from"</span>: <span class="code-str">"2024"</span>,
+    <span class="code-key">"valid_until"</span>: <span class="code-num">null</span>,
+    <span class="code-key">"temporal_confidence"</span>: <span class="code-str">"explicit"</span>
+  },
+  <span class="code-key">"definition"</span>: <span class="code-str">"Clear, standalone definition"</span>,
+  <span class="code-key">"relevance"</span>: <span class="code-str">"Why this matters"</span>,
+  <span class="code-key">"statements"</span>: [
+    <span class="code-str">"Atomic statement 1"</span>,
+    <span class="code-str">"Atomic statement 2"</span>
+  ]
+}
+
+<span class="code-comment">// Time-stamped embedding chunks</span>
+{
+  <span class="code-key">"id"</span>: <span class="code-str">"concept-a"</span>,
+  <span class="code-key">"source_period"</span>: <span class="code-str">"FY2024"</span>,
+  <span class="code-key">"embedding_text"</span>: <span class="code-str">"Stand Geschäftsjahr
+  2024: Plain text paragraph, no
+  markdown, no emoji, no syntax."</span>
+}</pre>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== Version History ===== -->
+<section id="history" class="section fade-in">
+  <div class="container container--narrow">
+    <div class="section__label">Evolution</div>
+    <h2 class="section__title">Version History</h2>
+    <div class="timeline">
+      <div class="timeline__item timeline__item--active">
+        <div class="timeline__marker"></div>
+        <div class="timeline__content">
+          <div class="timeline__header">
+            <span class="timeline__version">v3.1</span>
+            <time class="timeline__date" datetime="2026-03-16">16 March 2026</time>
+          </div>
+          <div class="timeline__title">Temporal Dimension</div>
+          <div class="timeline__desc">
+            Three temporal layers: source period, validity range, distillation date.
+            Per-node <code>temporal</code> objects. Time-stamped facts and embedding chunks.
+            ISO 8601 with flexible granularity (date, quarter, fiscal year, interval).
+            Enables time series, contradiction resolution, and stale knowledge detection across multi-document graphs.
+          </div>
+        </div>
+      </div>
+      <div class="timeline__item">
+        <div class="timeline__marker"></div>
+        <div class="timeline__content">
+          <div class="timeline__header">
+            <span class="timeline__version">v3.0</span>
+            <time class="timeline__date" datetime="2026-03-16">16 March 2026</time>
+          </div>
+          <div class="timeline__title">Dual Output Architecture</div>
+          <div class="timeline__desc">
+            Rich graph nodes with definitions and statements as properties.
+            Dual output: <code>.knowledge.md</code> + <code>.knowledge.json</code>.
+            Embedding-ready clean-text chunks. JSON-LD with schema.org context.
+          </div>
+        </div>
+      </div>
+      <div class="timeline__item">
+        <div class="timeline__marker"></div>
+        <div class="timeline__content">
+          <div class="timeline__header">
+            <span class="timeline__version">v2.0</span>
+            <time class="timeline__date" datetime="2026-03-15">15 March 2026</time>
+          </div>
+          <div class="timeline__title">Hierarchical Clusters + Confidence</div>
+          <div class="timeline__desc">
+            Added thematic cluster grouping, YAML machine-readable graph in frontmatter,
+            and per-block confidence ratings (high / medium / low).
+          </div>
+        </div>
+      </div>
+      <div class="timeline__item">
+        <div class="timeline__marker"></div>
+        <div class="timeline__content">
+          <div class="timeline__header">
+            <span class="timeline__version">v1.0</span>
+            <time class="timeline__date" datetime="2026-03-15">15 March 2026</time>
+          </div>
+          <div class="timeline__title">Initial Release</div>
+          <div class="timeline__desc">
+            6-phase workflow. Atomic knowledge blocks with Obsidian wikilinks.
+            Concept map, facts table, open questions.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== Supported Formats ===== -->
+<section class="section fade-in">
+  <div class="container container--narrow">
+    <div class="section__label">Compatibility</div>
+    <h2 class="section__title">Supported Input Formats</h2>
+    <div class="formats-list">
+      <span class="format-tag">PDF</span>
+      <span class="format-tag">DOCX</span>
+      <span class="format-tag">PPTX</span>
+      <span class="format-tag">XLSX</span>
+      <span class="format-tag">CSV</span>
+      <span class="format-tag">JSON</span>
+      <span class="format-tag">TXT</span>
+      <span class="format-tag">MD</span>
+      <span class="format-tag">HTML</span>
+      <span class="format-tag">PNG</span>
+      <span class="format-tag">JPG</span>
+      <span class="format-tag">URLs</span>
+    </div>
+
+    <div class="divider-label">works with</div>
+
+    <div class="formats-list">
+      <span class="format-tag">Obsidian</span>
+      <span class="format-tag">Neo4j</span>
+      <span class="format-tag">Gephi</span>
+      <span class="format-tag">OpenAI Embeddings</span>
+      <span class="format-tag">Cohere</span>
+      <span class="format-tag">RAG Pipelines</span>
+      <span class="format-tag">LangChain</span>
+      <span class="format-tag">LlamaIndex</span>
+    </div>
+  </div>
+</section>
+
+<!-- ===== CTA ===== -->
+<section class="section fade-in">
+  <div class="container container--narrow" style="text-align: center;">
+    <h2 class="section__title" style="margin-bottom: var(--space-4);">Start Distilling</h2>
+    <p style="color: var(--color-text-muted); font-size: var(--text-sm); margin-bottom: var(--space-6); max-width: 50ch; margin-inline: auto;">
+      Install the skill, point it at any document, and get temporally-aware structured knowledge in seconds.
+    </p>
+    <div style="display: flex; justify-content: center; gap: var(--space-3); flex-wrap: wrap;">
+      <a href="https://github.com/" target="_blank" rel="noopener noreferrer" class="btn btn--primary">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>
+        View on GitHub
+      </a>
+      <a href="#output" class="btn btn--secondary">See Examples</a>
+    </div>
+  </div>
+</section>
+
+<!-- ===== Footer ===== -->
+<footer class="footer">
+  <div class="container footer__inner">
+    <div class="footer__text">
+      Knowledge Distiller v3.1 — by mark_zimmermann &middot; Since March 2026
+    </div>
+    <div class="footer__links">
+      <a href="https://www.perplexity.ai/computer" target="_blank" rel="noopener noreferrer">Created with Perplexity Computer</a>
+    </div>
+  </div>
+</footer>
+
+<!-- ===== Scripts ===== -->
+<script>
+// Theme toggle
+(function(){
+  const t = document.querySelector('[data-theme-toggle]');
+  const r = document.documentElement;
+  let d = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  r.setAttribute('data-theme', d);
+  updateIcon();
+  t && t.addEventListener('click', () => {
+    d = d === 'dark' ? 'light' : 'dark';
+    r.setAttribute('data-theme', d);
+    t.setAttribute('aria-label', 'Switch to ' + (d === 'dark' ? 'light' : 'dark') + ' mode');
+    updateIcon();
+  });
+  function updateIcon() {
+    if (!t) return;
+    t.innerHTML = d === 'dark'
+      ? '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>'
+      : '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>';
+  }
+})();
+
+// Scroll-reveal
+(function(){
+  const els = document.querySelectorAll('.fade-in');
+  if (!els.length) return;
+  const obs = new IntersectionObserver((entries) => {
+    entries.forEach(e => {
+      if (e.isIntersecting) {
+        e.target.classList.add('visible');
+        obs.unobserve(e.target);
+      }
+    });
+  }, { threshold: 0.1, rootMargin: '0px 0px -40px 0px' });
+  els.forEach(el => obs.observe(el));
+})();
+</script>
+
+</body>
+</html>
