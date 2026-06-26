@@ -24,7 +24,7 @@
 <meta name="description" content="An AI agent skill that distills any document into structured knowledge graphs with temporal dimension. Dual output: human-readable Markdown + machine-readable JSON-LD. Built for Obsidian, RAG, Neo4j, and embeddings.">
 
 <!-- Open Graph -->
-<meta property="og:title" content="Knowledge Distiller v3.1">
+<meta property="og:title" content="Knowledge Distiller v4.0">
 <meta property="og:description" content="Distill documents into temporally-aware structured knowledge. Dual output: .knowledge.md + .knowledge.json">
 <meta property="og:type" content="website">
 
@@ -46,9 +46,9 @@
   "description": "AI agent skill that distills documents into temporally-aware structured knowledge graphs with dual Markdown + JSON-LD output.",
   "programmingLanguage": "Markdown",
   "codeRepository": "https://github.com/",
-  "version": "3.1",
+  "version": "4.0",
   "dateCreated": "2026-03-15",
-  "dateModified": "2026-03-16",
+  "dateModified": "2026-06-26",
   "creator": {
     "@type": "SoftwareApplication",
     "name": "Perplexity Computer",
@@ -76,6 +76,7 @@
     <nav class="header__nav">
       <a href="#how-it-works">How It Works</a>
       <a href="#output">Output</a>
+      <a href="#format">Format</a>
       <a href="#temporal">Temporal</a>
       <a href="#schema">Schema</a>
       <a href="#features">Features</a>
@@ -91,17 +92,18 @@
 <section class="hero">
   <div class="container">
     <div class="hero__badge">
-      <span>v3.1</span>
-      <span>March 2026</span>
-      <span>Temporal Knowledge</span>
+      <span>v4.0</span>
+      <span>June 2026</span>
+      <span>Spec-Enforced Format</span>
     </div>
     <h1 class="hero__title">
       Extract <span class="hero__accent">Knowledge</span>, Not&nbsp;Text
     </h1>
     <p class="hero__subtitle">
       An AI agent skill that distills any document into structured knowledge graphs
-      with temporal awareness.
-      Atomic concepts, explicit relationships, time context, zero redundancy.
+      with temporal awareness — now backed by a formal, machine-checkable format and
+      deterministic tooling. Atomic concepts, explicit relationships, auditable
+      citations, zero redundancy.
     </p>
     <div class="hero__actions">
       <a href="https://github.com/" target="_blank" rel="noopener noreferrer" class="btn btn--primary">
@@ -153,12 +155,12 @@
       <div class="pipeline__step">
         <span class="pipeline__number">06</span>
         <span class="pipeline__name">Validate</span>
-        <span class="pipeline__desc">Check JSON, node richness, temporal consistency, chunk time prefixes</span>
+        <span class="pipeline__desc">Deterministic script enforces SPEC + JSON Schema and computes a reproducible quality score — no LLM self-grading</span>
       </div>
       <div class="pipeline__step">
         <span class="pipeline__number">07</span>
         <span class="pipeline__name">Deliver</span>
-        <span class="pipeline__desc">Output paired .knowledge.md + .knowledge.json files</span>
+        <span class="pipeline__desc">Paired .knowledge.md + .knowledge.json, plus optional HTML viewer and scalable bundle</span>
       </div>
     </div>
   </div>
@@ -185,18 +187,19 @@
         <div class="output-card__body">
 <pre><span class="code-meta">---</span>
 <span class="code-key">title:</span> <span class="code-str">Building Skills for Claude</span>
-<span class="code-key">source_type:</span> <span class="code-str">PDF</span>
-<span class="code-key">source_date:</span> <span class="code-str">"2026-01"</span>
-<span class="code-key">source_period:</span> <span class="code-num">null</span>
+<span class="code-key">distiller_version:</span> <span class="code-str">"4.0"</span>
+<span class="code-key">distiller_spec_version:</span> <span class="code-str">"1.0"</span>
+<span class="code-key">distillation_date:</span> <span class="code-str">"2026-06-26"</span>
+<span class="code-key">quality_score:</span> <span class="code-num">100</span>
 <span class="code-key">temporal_confidence:</span> <span class="code-str">"inferred"</span>
-<span class="code-key">distilled:</span> <span class="code-str">"2026-03-16"</span>
-<span class="code-key">confidence:</span> <span class="code-str">high</span>
-<span class="code-key">companion:</span> <span class="code-str">claude-skills-guide.knowledge.json</span>
+<span class="code-key">concept_count:</span> <span class="code-num">13</span>
+<span class="code-key">sources:</span>
+  - <span class="code-key">id:</span> <span class="code-str">s1</span>
+    <span class="code-key">file:</span> <span class="code-str">building-skills-for-claude.pdf</span>
 <span class="code-key">clusters:</span>
-  - <span class="code-key">name:</span> <span class="code-str">Skill Anatomy</span>
-    <span class="code-key">concepts:</span> <span class="code-str">[Skill, SKILL.md, YAML Frontmatter]</span>
-  - <span class="code-key">name:</span> <span class="code-str">Design Principles</span>
-    <span class="code-key">concepts:</span> <span class="code-str">[Progressive Disclosure, Composability]</span>
+  <span class="code-key">skill-anatomy:</span>
+    <span class="code-key">label:</span> <span class="code-str">Skill Anatomy</span>
+    <span class="code-key">concepts:</span> <span class="code-str">[skill, yaml-frontmatter]</span>
 <span class="code-meta">---</span>
 
 <span class="code-heading">## Kernwissen</span>
@@ -212,9 +215,14 @@ task types. SKILL.md is the only required file.
 <span class="code-heading">**Zeitbezug:**</span> Valid from 2025 · Source: 2026-01
 
 <span class="code-heading">**Beziehungen:**</span>
-- Based on → <span class="code-link">[[SKILL.md]]</span>
 - Uses → <span class="code-link">[[Progressive Disclosure]]</span>
-- Enables → <span class="code-link">[[Workflow Patterns]]</span></pre>
+- Enables → <span class="code-link">[[Workflow Patterns]]</span>
+
+<span class="code-heading">**Kernaussagen:**</span>
+- SKILL.md is the only required file. <span class="code-link">[1]</span>
+
+<span class="code-heading">## Quellen</span>
+<span class="code-link">[1]</span> building-skills-for-claude.pdf — pdf, 2026-01</pre>
         </div>
       </div>
 
@@ -229,39 +237,100 @@ task types. SKILL.md is the only required file.
 <pre>{
   <span class="code-key">"@context"</span>: {
     <span class="code-key">"@vocab"</span>: <span class="code-str">"https://schema.org/"</span>,
-    <span class="code-key">"kd"</span>: <span class="code-str">"https://knowledge-distiller.dev/schema/"</span>
+    <span class="code-key">"kd"</span>: <span class="code-str">"https://knowledge-distiller.dev/v4/"</span>
   },
   <span class="code-key">"metadata"</span>: {
-    <span class="code-key">"source_date"</span>: <span class="code-str">"2026-01"</span>,
-    <span class="code-key">"source_period"</span>: <span class="code-num">null</span>,
-    <span class="code-key">"temporal_confidence"</span>: <span class="code-str">"inferred"</span>,
-    <span class="code-key">"schema_version"</span>: <span class="code-str">"3.1"</span>
+    <span class="code-key">"distiller_version"</span>: <span class="code-str">"4.0"</span>,
+    <span class="code-key">"distiller_spec_version"</span>: <span class="code-str">"1.0"</span>,
+    <span class="code-key">"quality_score"</span>: <span class="code-num">100</span>,
+    <span class="code-key">"sources"</span>: [{ <span class="code-key">"id"</span>: <span class="code-str">"s1"</span>,
+      <span class="code-key">"file"</span>: <span class="code-str">"...pdf"</span> }]
   },
   <span class="code-key">"nodes"</span>: [{
     <span class="code-key">"id"</span>: <span class="code-str">"skill"</span>,
     <span class="code-key">"label"</span>: <span class="code-str">"Skill"</span>,
     <span class="code-key">"confidence"</span>: <span class="code-str">"high"</span>,
+    <span class="code-key">"resource"</span>: <span class="code-num">null</span>,
     <span class="code-key">"temporal"</span>: {
       <span class="code-key">"source_date"</span>: <span class="code-str">"2026-01"</span>,
       <span class="code-key">"valid_from"</span>: <span class="code-str">"2025"</span>,
-      <span class="code-key">"valid_until"</span>: <span class="code-num">null</span>,
       <span class="code-key">"temporal_confidence"</span>: <span class="code-str">"inferred"</span>
     },
     <span class="code-key">"definition"</span>: <span class="code-str">"A folder-based instruction
   package for Claude..."</span>,
     <span class="code-key">"statements"</span>: [<span class="code-str">"SKILL.md is the
-  only required file"</span>]
+  only required file. [1]"</span>],
+    <span class="code-key">"sources"</span>: [<span class="code-str">"s1"</span>],
+    <span class="code-key">"citations"</span>: [{ <span class="code-key">"n"</span>: <span class="code-num">1</span>,
+      <span class="code-key">"source"</span>: <span class="code-str">"s1"</span> }]
   }],
   <span class="code-key">"chunks"</span>: [{
     <span class="code-key">"id"</span>: <span class="code-str">"skill"</span>,
-    <span class="code-key">"source_period"</span>: <span class="code-num">null</span>,
-    <span class="code-key">"embedding_text"</span>: <span class="code-str">"As of early 2026:
+    <span class="code-key">"concepts"</span>: [<span class="code-str">"skill"</span>],
+    <span class="code-key">"text"</span>: <span class="code-str">"As of early 2026:
   A skill is a folder-based instruction
   package that teaches Claude how to
   handle specific task types."</span>
   }]
 }</pre>
         </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== Format as a Contract (NEW v4.0) ===== -->
+<section id="format" class="section fade-in">
+  <div class="container">
+    <div class="section__label">New in v4.0 · Spec 1.0</div>
+    <h2 class="section__title">Format as a Contract</h2>
+    <p style="color: var(--color-text-muted); margin-bottom: var(--space-6); max-width: 64ch; font-size: var(--text-sm); line-height: 1.6;">
+      The output is no longer just prose in a skill file. It is a versioned specification,
+      enforced by code, with deterministic tooling that generates every derived artifact —
+      so the Markdown and JSON can never drift, and quality is measured, not guessed.
+    </p>
+    <div class="features-grid">
+      <div class="feature-card">
+        <div class="feature-card__icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 13h6M9 17h6"/></svg>
+        </div>
+        <div class="feature-card__title">Formal Spec + Schema</div>
+        <div class="feature-card__desc"><code>SPEC.md</code> (RFC-2119, conformance, versioning) is the single source of truth, mirrored by a JSON Schema. When skill and spec disagree, the spec wins.</div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-card__icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 12l2 2 4-4"/><path d="M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z"/></svg>
+        </div>
+        <div class="feature-card__title">Deterministic Validation</div>
+        <div class="feature-card__desc">A script enforces the contract and computes a reproducible <code>quality_score</code> (100 − 10·errors − 2·warnings). The model never grades itself. 21 golden tests lock it in.</div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-card__icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M8 9h8M8 13h5"/></svg>
+        </div>
+        <div class="feature-card__title">Auditable Citations</div>
+        <div class="feature-card__desc">Statements carry <code>[n]</code> markers resolving to a numbered <code>## Quellen</code> list; every fact is sourced. A <code>resource</code> field gives concepts a canonical identity for cross-source dedup.</div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-card__icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 3v18"/><path d="M5 8l7-5 7 5"/><path d="M5 8v8l7 5 7-5V8"/></svg>
+        </div>
+        <div class="feature-card__title">Monotonic Merge</div>
+        <div class="feature-card__desc">Incremental merges only ever enrich the graph — a shrinking merge fails validation. Conflicting values become a time series with a <code>tension</code>/<code>replaces</code> edge.</div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-card__icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="6" cy="6" r="3"/><circle cx="18" cy="18" r="3"/><circle cx="18" cy="6" r="3"/><path d="M9 6h6M18 9v6M8.5 8.5l7 7"/></svg>
+        </div>
+        <div class="feature-card__title">Scalable Bundle</div>
+        <div class="feature-card__desc">Optional one-file-per-concept directory layout with generated <code>index.md</code> manifests and <code>#&nbsp;Citations</code> per leaf — clean git diffs and progressive disclosure for large corpora.</div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-card__icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/><circle cx="8" cy="9" r="1.5"/><circle cx="15" cy="11" r="1.5"/><path d="M9.3 9.6l4.4 1"/></svg>
+        </div>
+        <div class="feature-card__title">Self-Contained Viewer</div>
+        <div class="feature-card__desc">Render an offline, interactive <code>.knowledge.html</code>: Cytoscape graph, color-by-cluster, edge weight as thickness, "Cited by" backlinks, and greyed-out superseded nodes.</div>
       </div>
     </div>
   </div>
@@ -453,15 +522,16 @@ task types. SKILL.md is the only required file.
       <div>
         <div class="schema-block">
           <div class="schema-block__header">
-            <span>node schema v3.1</span>
+            <span>node schema v4.0 (spec 1.0)</span>
           </div>
           <div class="schema-block__body">
-<pre><span class="code-comment">// Each node is self-contained + temporal</span>
+<pre><span class="code-comment">// Self-contained, temporal, sourced</span>
 {
   <span class="code-key">"id"</span>: <span class="code-str">"konzept-kebab-case"</span>,
   <span class="code-key">"label"</span>: <span class="code-str">"Display Name"</span>,
   <span class="code-key">"cluster"</span>: <span class="code-str">"cluster-id"</span>,
   <span class="code-key">"confidence"</span>: <span class="code-str">"high"</span>,
+  <span class="code-key">"resource"</span>: <span class="code-str">"canonical-uri | null"</span>,
   <span class="code-key">"temporal"</span>: {
     <span class="code-key">"source_period"</span>: <span class="code-str">"FY2024"</span>,
     <span class="code-key">"valid_from"</span>: <span class="code-str">"2024"</span>,
@@ -470,17 +540,16 @@ task types. SKILL.md is the only required file.
   },
   <span class="code-key">"definition"</span>: <span class="code-str">"Clear, standalone definition"</span>,
   <span class="code-key">"relevance"</span>: <span class="code-str">"Why this matters"</span>,
-  <span class="code-key">"statements"</span>: [
-    <span class="code-str">"Atomic statement 1"</span>,
-    <span class="code-str">"Atomic statement 2"</span>
-  ]
+  <span class="code-key">"statements"</span>: [<span class="code-str">"Atomic statement [1]"</span>],
+  <span class="code-key">"sources"</span>: [<span class="code-str">"s1"</span>],
+  <span class="code-key">"citations"</span>: [{ <span class="code-key">"n"</span>: <span class="code-num">1</span>, <span class="code-key">"source"</span>: <span class="code-str">"s1"</span> }]
 }
 
-<span class="code-comment">// Time-stamped embedding chunks</span>
+<span class="code-comment">// Clean, embedding-ready chunks</span>
 {
   <span class="code-key">"id"</span>: <span class="code-str">"concept-a"</span>,
-  <span class="code-key">"source_period"</span>: <span class="code-str">"FY2024"</span>,
-  <span class="code-key">"embedding_text"</span>: <span class="code-str">"Stand Geschäftsjahr
+  <span class="code-key">"concepts"</span>: [<span class="code-str">"concept-a"</span>],
+  <span class="code-key">"text"</span>: <span class="code-str">"Stand Geschäftsjahr
   2024: Plain text paragraph, no
   markdown, no emoji, no syntax."</span>
 }</pre>
@@ -498,6 +567,38 @@ task types. SKILL.md is the only required file.
     <h2 class="section__title">Version History</h2>
     <div class="timeline">
       <div class="timeline__item timeline__item--active">
+        <div class="timeline__marker"></div>
+        <div class="timeline__content">
+          <div class="timeline__header">
+            <span class="timeline__version">v4.0 · spec 1.0</span>
+            <time class="timeline__date" datetime="2026-06-26">June 2026</time>
+          </div>
+          <div class="timeline__title">Format as a Contract</div>
+          <div class="timeline__desc">
+            Formal <code>SPEC.md</code> + JSON Schema as the single source of truth.
+            Deterministic validation and derived-artifact tooling (<code>scripts/</code>) replace
+            LLM self-grading — the <code>quality_score</code> is computed, not guessed.
+            Auditable <code>[n]</code> citations with a <code>## Quellen</code> list, a <code>resource</code>
+            identity key, a monotonic (non-destructive) merge contract, a scalable directory
+            bundle, a self-contained HTML viewer, and a golden test suite.
+          </div>
+        </div>
+      </div>
+      <div class="timeline__item">
+        <div class="timeline__marker"></div>
+        <div class="timeline__content">
+          <div class="timeline__header">
+            <span class="timeline__version">v4.0</span>
+            <time class="timeline__date" datetime="2026-04-01">April 2026</time>
+          </div>
+          <div class="timeline__title">Multi-Agent Pipeline</div>
+          <div class="timeline__desc">
+            Multi-agent distillation, incremental processing, context management for large
+            documents, and extended export formats (Mermaid, Cypher, CTXT, Canvas).
+          </div>
+        </div>
+      </div>
+      <div class="timeline__item">
         <div class="timeline__marker"></div>
         <div class="timeline__content">
           <div class="timeline__header">
@@ -616,7 +717,7 @@ task types. SKILL.md is the only required file.
 <footer class="footer">
   <div class="container footer__inner">
     <div class="footer__text">
-      Knowledge Distiller v3.1 — by mark_zimmermann &middot; Since March 2026
+      Knowledge Distiller v4.0 — by mark_zimmermann &middot; Since March 2026
     </div>
     <div class="footer__links">
       <a href="https://www.perplexity.ai/computer" target="_blank" rel="noopener noreferrer">Created with Perplexity Computer</a>

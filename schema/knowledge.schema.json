@@ -1,0 +1,202 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://knowledge-distiller.dev/schema/knowledge.schema.json",
+  "title": "Knowledge Distiller .knowledge.json (v4.0, spec 1.0)",
+  "description": "Machine-checkable contract for the Knowledge Distiller graph output. Producers MUST emit conforming documents; consumers SHOULD be permissive (tolerate unknown extra keys, unknown distiller_spec_version, missing optional fields, and broken cross-links) per SPEC.md §9.",
+  "type": "object",
+  "required": ["metadata", "clusters", "nodes", "edges"],
+  "properties": {
+    "@context": {
+      "description": "JSON-LD context. Optional; consumers MUST NOT reject a document for a missing or unfamiliar @context.",
+      "type": "object"
+    },
+    "metadata": {
+      "type": "object",
+      "required": [
+        "title",
+        "distiller_version",
+        "distiller_spec_version",
+        "sources",
+        "distillation_date",
+        "domain",
+        "language",
+        "depth",
+        "mode",
+        "quality_score",
+        "concept_count",
+        "relationship_count",
+        "cluster_count"
+      ],
+      "properties": {
+        "title": {"type": "string", "minLength": 1},
+        "distiller_version": {"type": "string", "const": "4.0"},
+        "distiller_spec_version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+$"},
+        "sources": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/source"}
+        },
+        "distillation_date": {"$ref": "#/$defs/isoDate"},
+        "domain": {"type": "string"},
+        "language": {"type": "string", "minLength": 2},
+        "depth": {"enum": ["quick", "standard", "deep"]},
+        "mode": {"enum": ["fresh", "merge", "batch"]},
+        "quality_score": {"type": "integer", "minimum": 0, "maximum": 100},
+        "temporal_confidence": {"$ref": "#/$defs/temporalConfidence"},
+        "concept_count": {"type": "integer", "minimum": 0},
+        "relationship_count": {"type": "integer", "minimum": 0},
+        "cluster_count": {"type": "integer", "minimum": 0},
+        "fact_count": {"type": "integer", "minimum": 0}
+      }
+    },
+    "clusters": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/cluster"}
+    },
+    "nodes": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/node"}
+    },
+    "edges": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/edge"}
+    },
+    "facts": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/fact"}
+    },
+    "chunks": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/chunk"}
+    },
+    "open_questions": {
+      "type": "array",
+      "items": {"type": "string"}
+    }
+  },
+  "$defs": {
+    "isoDate": {
+      "description": "ISO 8601 with flexible granularity: 2024-12-31 | 2024-12 | 2024-Q4 | 2024 | FY2024 | 2020/2024.",
+      "type": "string",
+      "pattern": "^(FY[0-9]{4}|[0-9]{4}(-(Q[1-4]|[0-9]{2}(-[0-9]{2})?))?)(/(FY[0-9]{4}|[0-9]{4}(-(Q[1-4]|[0-9]{2}(-[0-9]{2})?))?))?$"
+    },
+    "confidence": {"enum": ["high", "medium", "low"]},
+    "temporalConfidence": {"enum": ["explicit", "inferred", "unknown"]},
+    "edgeType": {
+      "description": "Closed vocabulary of 8 relationship types.",
+      "enum": ["uses", "enables", "based-on", "part-of", "tension", "replaces", "extends", "example-of"]
+    },
+    "source": {
+      "type": "object",
+      "required": ["id", "file", "type"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "file": {"type": "string", "minLength": 1},
+        "type": {"type": "string"},
+        "date": {"anyOf": [{"$ref": "#/$defs/isoDate"}, {"type": "null"}]},
+        "url": {"anyOf": [{"type": "string"}, {"type": "null"}]}
+      }
+    },
+    "cluster": {
+      "type": "object",
+      "required": ["id", "label", "concepts"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "label": {"type": "string", "minLength": 1},
+        "description": {"type": "string"},
+        "concepts": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "nodeTemporal": {
+      "type": "object",
+      "required": ["source_date", "temporal_confidence"],
+      "properties": {
+        "source_date": {"anyOf": [{"$ref": "#/$defs/isoDate"}, {"type": "null"}]},
+        "source_period": {"anyOf": [{"$ref": "#/$defs/isoDate"}, {"type": "null"}]},
+        "valid_from": {"anyOf": [{"$ref": "#/$defs/isoDate"}, {"type": "null"}]},
+        "valid_until": {"anyOf": [{"$ref": "#/$defs/isoDate"}, {"type": "null"}]},
+        "temporal_confidence": {"$ref": "#/$defs/temporalConfidence"}
+      }
+    },
+    "citation": {
+      "type": "object",
+      "required": ["n", "source"],
+      "properties": {
+        "n": {"type": "integer", "minimum": 1},
+        "source": {"type": "string", "minLength": 1},
+        "locator": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+        "label": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+        "url": {"anyOf": [{"type": "string"}, {"type": "null"}]}
+      }
+    },
+    "node": {
+      "type": "object",
+      "required": ["id", "label", "cluster", "confidence", "definition", "relevance", "statements", "temporal", "sources"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"},
+        "label": {"type": "string", "minLength": 1},
+        "cluster": {"type": "string", "minLength": 1},
+        "confidence": {"$ref": "#/$defs/confidence"},
+        "definition": {"type": "string", "minLength": 1},
+        "relevance": {"type": "string"},
+        "resource": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+        "statements": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+        "temporal": {"$ref": "#/$defs/nodeTemporal"},
+        "sources": {"type": "array", "items": {"type": "string"}},
+        "citations": {"type": "array", "items": {"$ref": "#/$defs/citation"}}
+      }
+    },
+    "edge": {
+      "type": "object",
+      "required": ["source", "target", "type", "weight", "confidence"],
+      "properties": {
+        "id": {"type": "string"},
+        "source": {"type": "string", "minLength": 1},
+        "target": {"type": "string", "minLength": 1},
+        "type": {"$ref": "#/$defs/edgeType"},
+        "label": {"type": "string"},
+        "weight": {"type": "number", "minimum": 0, "maximum": 1},
+        "confidence": {"$ref": "#/$defs/confidence"},
+        "temporal": {
+          "type": "object",
+          "properties": {
+            "valid_from": {"anyOf": [{"$ref": "#/$defs/isoDate"}, {"type": "null"}]},
+            "valid_until": {"anyOf": [{"$ref": "#/$defs/isoDate"}, {"type": "null"}]}
+          }
+        }
+      }
+    },
+    "fact": {
+      "type": "object",
+      "required": ["id", "statement", "value", "confidence", "source"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "statement": {"type": "string", "minLength": 1},
+        "value": {"type": "string"},
+        "temporal": {
+          "type": "object",
+          "properties": {
+            "source_date": {"anyOf": [{"$ref": "#/$defs/isoDate"}, {"type": "null"}]},
+            "source_period": {"anyOf": [{"$ref": "#/$defs/isoDate"}, {"type": "null"}]},
+            "valid_from": {"anyOf": [{"$ref": "#/$defs/isoDate"}, {"type": "null"}]},
+            "valid_until": {"anyOf": [{"$ref": "#/$defs/isoDate"}, {"type": "null"}]},
+            "temporal_confidence": {"$ref": "#/$defs/temporalConfidence"}
+          }
+        },
+        "confidence": {"$ref": "#/$defs/confidence"},
+        "source": {"type": "string", "minLength": 1}
+      }
+    },
+    "chunk": {
+      "type": "object",
+      "required": ["id", "text", "concepts"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "text": {"type": "string", "minLength": 1},
+        "concepts": {"type": "array", "items": {"type": "string"}},
+        "temporal_scope": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+        "token_estimate": {"type": "integer", "minimum": 0}
+      }
+    }
+  }
+}

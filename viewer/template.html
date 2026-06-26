@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Knowledge Graph</title>
+  <script src="https://unpkg.com/cytoscape@3/dist/cytoscape.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <style>
+/*__VIZ_CSS__*/
+  </style>
+</head>
+<body>
+  <header id="topbar">
+    <div id="title-block">
+      <h1 id="kg-title">Knowledge Graph</h1>
+      <div id="kg-sub"></div>
+    </div>
+    <div id="kg-chips"></div>
+    <input id="search" type="search" placeholder="Search concepts…" autocomplete="off" spellcheck="false">
+  </header>
+
+  <div id="main">
+    <div id="graph-wrap">
+      <div id="cy"></div>
+      <div id="legend"></div>
+    </div>
+    <aside id="side">
+      <div id="detail"></div>
+    </aside>
+  </div>
+
+  <script>const GRAPH = /*__GRAPH_DATA__*/;</script>
+  <script>
+/*__VIZ_JS__*/
+  </script>
+</body>
+</html>

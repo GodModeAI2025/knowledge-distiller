@@ -1,0 +1,53 @@
+{
+  "@context": {"@vocab": "https://schema.org/", "kd": "https://knowledge-distiller.dev/v4/"},
+  "metadata": {
+    "title": "Minimal Valid Graph",
+    "distiller_version": "4.0",
+    "distiller_spec_version": "1.0",
+    "sources": [{"id": "s1", "file": "demo.txt", "type": "txt", "date": "2026-01", "url": null}],
+    "distillation_date": "2026-06-26",
+    "domain": "Testing",
+    "language": "en",
+    "depth": "standard",
+    "mode": "fresh",
+    "quality_score": 100,
+    "temporal_confidence": "explicit",
+    "concept_count": 3,
+    "relationship_count": 2,
+    "cluster_count": 2,
+    "fact_count": 1
+  },
+  "clusters": [
+    {"id": "c1", "label": "Cluster One", "description": "first", "concepts": ["alpha", "beta"]},
+    {"id": "c2", "label": "Cluster Two", "description": "second", "concepts": ["gamma"]}
+  ],
+  "nodes": [
+    {"id": "alpha", "label": "Alpha", "cluster": "c1", "confidence": "high",
+     "definition": "The first concept.", "relevance": "It anchors the graph.", "resource": null,
+     "statements": ["Alpha depends on Beta. [1]"],
+     "temporal": {"source_date": "2026-01", "source_period": null, "valid_from": "2026-01", "valid_until": null, "temporal_confidence": "explicit"},
+     "sources": ["s1"], "citations": [{"n": 1, "source": "s1", "locator": null, "label": "demo.txt", "url": null}]},
+    {"id": "beta", "label": "Beta", "cluster": "c1", "confidence": "medium",
+     "definition": "The second concept.", "relevance": "It is used by Alpha.", "resource": null,
+     "statements": ["Beta is in tension with Gamma. [1]"],
+     "temporal": {"source_date": "2026-01", "source_period": null, "valid_from": "2026-01", "valid_until": null, "temporal_confidence": "explicit"},
+     "sources": ["s1"], "citations": [{"n": 1, "source": "s1", "locator": null, "label": "demo.txt", "url": null}]},
+    {"id": "gamma", "label": "Gamma", "cluster": "c2", "confidence": "low",
+     "definition": "The third concept.", "relevance": "It stands apart.", "resource": null,
+     "statements": ["Gamma is independent. [1]"],
+     "temporal": {"source_date": "2026-01", "source_period": null, "valid_from": "2026-01", "valid_until": null, "temporal_confidence": "explicit"},
+     "sources": ["s1"], "citations": [{"n": 1, "source": "s1", "locator": null, "label": "demo.txt", "url": null}]}
+  ],
+  "edges": [
+    {"id": "alpha__uses__beta", "source": "alpha", "target": "beta", "type": "uses", "label": "Alpha uses Beta", "weight": 1.0, "confidence": "high", "temporal": {"valid_from": null, "valid_until": null}},
+    {"id": "beta__tension__gamma", "source": "beta", "target": "gamma", "type": "tension", "label": "Beta vs Gamma", "weight": 0.5, "confidence": "medium", "temporal": {"valid_from": null, "valid_until": null}}
+  ],
+  "facts": [
+    {"id": "f1", "statement": "Number of concepts", "value": "3", "confidence": "high", "source": "s1",
+     "temporal": {"source_date": "2026-01", "source_period": null, "valid_from": "2026-01", "valid_until": null, "temporal_confidence": "explicit"}}
+  ],
+  "chunks": [
+    {"id": "ch-alpha", "text": "As of early 2026, Alpha is the first concept and it depends on Beta.", "concepts": ["alpha"], "temporal_scope": "2026", "token_estimate": 16}
+  ],
+  "open_questions": []
+}

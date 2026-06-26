@@ -23,15 +23,22 @@ model: opus
 arguments:
   source: "Dateipfad, URL oder Ordnerpfad der zu verarbeitenden Quelle(n)"
   depth: "Verarbeitungstiefe: quick (Überblick), standard (vollständig), deep (mit Inferenz)"
-  format: "Ausgabeformat: md, json, both, all (inkl. Mermaid, Cypher, CTXT)"
+  format: "Ausgabeformat: md, json, both, all (inkl. Mermaid, Cypher, CTXT, HTML-Viewer), bundle (Ordner: eine Datei pro Konzept)"
   language: "Ausgabesprache: de, en (Default: Sprache des Quelldokuments)"
   mode: "Verarbeitungsmodus: fresh (neu), merge (mit bestehendem Graph), batch (Ordner)"
 version: "4.0"
+spec_version: "1.0"
 ---
 
 # Knowledge Distiller v4.0
 
 > **Leitprinzip:** Eine Datei ist ein Behälter. Das Wissen darin ist wertvoll.
+
+> **Kanonischer Vertrag:** Das Ausgabeformat ist verbindlich in [`SPEC.md`](SPEC.md) definiert
+> und maschinell prüfbar über [`schema/knowledge.schema.json`](schema/knowledge.schema.json).
+> Bei Widerspruch zwischen dieser Anleitung und `SPEC.md` **gilt `SPEC.md`.** Abgeleitete
+> Artefakte (Zähler, Concept Map, Mermaid, `index.md`, `quality_score`) werden **deterministisch
+> per Skript** erzeugt, nicht vom Modell von Hand (siehe `scripts/`).
 
 ## Was dieser Skill NICHT tut
 - 1:1-Transkripte erstellen
@@ -52,10 +59,14 @@ version: "4.0"
 - Embedding-optimierte Chunks ohne Markdown-Artefakte erzeugen
 - **v3.1:** Temporale Dimensionen — Zeitbezüge pro Wissensblock, Fakt und Kante
 - **v4.0 NEU:** Multi-Agent-Distillation für parallele Tiefenanalyse
-- **v4.0 NEU:** Inkrementelle Graph-Evolution (Merge, Delta, Multi-Source)
-- **v4.0 NEU:** Automatisierte Qualitätssicherung mit Validation-Agent
+- **v4.0 NEU:** Inkrementelle Graph-Evolution (monotoner Merge, Delta, Multi-Source)
 - **v4.0 NEU:** Context-Management für Dokumente jeder Größe
 - **v4.0 NEU:** Erweiterte Ausgabeformate (Mermaid, Cypher, CTXT, Canvas, HTML)
+- **v4.0 / Spec 1.0 NEU:** Formale, maschinen-prüfbare Spezifikation (`SPEC.md` + JSON-Schema)
+- **v4.0 / Spec 1.0 NEU:** Deterministische Validierung per Skript statt LLM-Selbstbewertung
+- **v4.0 / Spec 1.0 NEU:** Quellenbelege pro Aussage (`[n]`-Marker + `## Quellen`), `resource`-Identität
+- **v4.0 / Spec 1.0 NEU:** Skalierbares Bundle-Format (eine Datei pro Konzept + `index.md`)
+- **v4.0 / Spec 1.0 NEU:** Self-contained HTML-Viewer aus dem Graphen
 
 ---
 
@@ -126,11 +137,24 @@ Quelle → [Extraction-Agent]
 - Relevanz (warum wichtig für die Praxis)
 - Cluster-Zuordnung
 - Konfidenz (high/medium/low)
+- `resource` (kanonische Identitäts-URI des bezeichneten Dings, falls vorhanden — dient als
+  Dedup-Schlüssel über Quellen hinweg; sonst `null`)
 
 **Qualitätsregeln:**
 - Jedes Konzept MUSS ohne Quelldokument verständlich sein
 - Keine Synonyme als separate Konzepte
 - Minimum 10 Konzepte bei `standard`, 5 bei `quick`, 20+ bei `deep`
+
+**Vier-Gate-Test für eigenständige Wissens-Einheiten** (verhindert Rauschen, fördert DRY):
+Lege ein eigenes Konzept (statt es in einem anderen zu vergraben) nur an, wenn ALLE gelten:
+1. **Referenzierbar:** Es ist per Name benennbar (eine Metrik, eine Formel, eine Definition,
+   ein Verfahren) — nicht bloß ein Abschnittstitel.
+2. **Nicht Meta:** Der Slug steht NICHT auf der Denylist (`overview`, `introduction`,
+   `getting-started`, `summary`, `conclusion`, `misc`, `notes`).
+3. **Belegbar:** Es lässt sich mit mindestens einer Quelle belegen.
+4. **Wiederverwendung ≥ 2:** Es wird an mehr als einer Stelle gebraucht → einmal als Konzept
+   anlegen und mehrfach verlinken, statt es zu wiederholen.
+Im Zweifel: **weglassen** (lieber in ein bestehendes Konzept einbetten).
 
 #### 3. Relationship-Agent
 **Aufgabe:** Beziehungen zwischen Konzepten kartieren.
@@ -188,41 +212,36 @@ Quelle → [Extraction-Agent]
 6. Fakten-Tabelle konsolidieren
 7. Offene Fragen sammeln (bei `deep` Modus)
 
-#### 6. Validation-Agent
-**Aufgabe:** Automatisierte Qualitätsprüfung des gesamten Outputs.
-**Prüfcheckliste:**
+#### 6. Validation-Agent (deterministisch, skriptbasiert)
+**Aufgabe:** Maschinelle Qualitätssicherung. **Das Modell bewertet sich NICHT selbst** —
+die Prüfung läuft in Code, damit das Format erzwungen und der Score reproduzierbar ist.
 
-```
-MARKDOWN-VALIDIERUNG:
-□ Kein Copy-Paste aus Originaldokument
-□ Jedes Konzept exakt einmal definiert (Single-Definition-Prinzip)
-□ Jeder Concept-Map-Eintrag verweist auf existierenden Kernwissen-Block
-□ Alle Wikilinks [[...]] zeigen auf definierte Konzepte
-□ Cluster-Zuordnung konsistent zwischen Frontmatter und Kernwissen
-□ Zeitliche Annotationen in jedem Block vorhanden
-□ Embedding-Chunks frei von Markdown-Syntax, Emojis, Pfeilen, Wikilinks
-
-JSON-VALIDIERUNG:
-□ Syntaktisch valides JSON
-□ JSON-LD @context korrekt (schema.org)
-□ Jeder Knoten hat: id, label, cluster, confidence, definition, relevance, statements[], temporal{}
-□ Jede Kante hat: source, target, type (aus 8 Typen), label, weight, confidence
-□ Alle source/target-Referenzen zeigen auf existierende Knoten-IDs
-□ Chunks enthalten keinen Syntax-Ballast
-□ Temporale Felder vollständig ausgefüllt (mindestens source_date + temporal_confidence)
-
-CROSS-VALIDIERUNG:
-□ Markdown und JSON enthalten identisches Wissen
-□ Anzahl Konzepte stimmt überein
-□ Anzahl Beziehungen stimmt überein
-□ Cluster-Struktur identisch
-```
-
-**Qualitäts-Score:**
-Berechne einen Gesamtscore (0-100) basierend auf der Checkliste. Score wird im Frontmatter beider Outputs gespeichert.
+**Ablauf (zwingend in dieser Reihenfolge):**
+1. Abgeleitete Felder berechnen lassen — Zähler, Cluster-Mitgliedschaft, kanonische Kanten-IDs,
+   `quality_score`:
+   ```bash
+   python3 scripts/build_graph.py <out>.knowledge.json --write
+   ```
+2. Validieren gegen `SPEC.md` / `schema/knowledge.schema.json`:
+   ```bash
+   python3 scripts/validate_knowledge.py <out>.knowledge.json
+   # bei mode=merge zusätzlich die Monotonie-Garantie prüfen:
+   python3 scripts/validate_knowledge.py --prev <out>.knowledge.v1.json <out>.knowledge.json
+   ```
+3. Das Skript trennt **ERRORS** (nicht-konform → MUSS behoben werden) von **WARNINGS**
+   (konform, sollte behoben werden) und gibt `quality_score = 100 − 10·Fehler − 2·Warnungen`
+   aus (siehe `SPEC.md` §9). Dieser Score wird ins Frontmatter beider Outputs übernommen —
+   nicht ein vom Modell geschätzter Wert.
 
 **Self-Healing:**
-Bei Score < 80 → Fehler identifizieren, automatisch korrigieren, Re-Validierung durchführen. Maximal 2 Korrektur-Iterationen.
+Solange das Skript ERRORS meldet → die *genannten* Fehler beheben (fehlende Pflichtfelder,
+unaufgelöste Kanten/Quellen, Zähler-Abweichungen, Syntax-Ballast in Chunks, Zitat-Marker außer
+Reichweite), dann `build_graph.py --write` + `validate_knowledge.py` erneut ausführen. Maximal
+2 Korrektur-Iterationen; danach verbleibende ERRORS dem Nutzer berichten statt verstecken.
+
+> Wenn `validate_knowledge.py` mit 0 ERRORS endet, ist das Dokument **konform** (Exit-Code 0).
+> Das optionale `jsonschema`-Paket aktiviert zusätzlich die Schema-Ebene; ohne es laufen die
+> strukturellen Prüfungen trotzdem (reine Standardbibliothek).
 
 ---
 
@@ -249,18 +268,25 @@ Dokumente die das Context-Fenster überschreiten werden in semantische Abschnitt
 
 ## Phase 3: Inkrementelle Graph-Evolution
 
-### Merge-Modus
+### Merge-Modus — anreichernd, nie zerstörend (Monotonie-Vertrag, `SPEC.md` §6)
 Wenn ein bestehender `.knowledge.json` im Ausgabeordner existiert:
 
-1. **Bestehenden Graph laden** und parsen
-2. **Neue Konzepte** hinzufügen (ID-Kollisionen durch Suffix `-v2` auflösen)
-3. **Bestehende Konzepte aktualisieren:**
-   - Höhere Konfidenz gewinnt
-   - Bei gleicher Konfidenz: neueres Quelldatum gewinnt
-   - Statements werden vereinigt (keine Duplikate)
-4. **Neue Beziehungen** ergänzen, bestehende Gewichte anpassen
-5. **Multi-Source-Provenance:** Jeder Knoten/Kante bekommt `sources[]`-Array mit Herkunftsdokumenten
-6. **Delta-Output:** Zusätzlich `.knowledge.diff.md` mit nur den Änderungen
+1. **Bestehenden Graph laden** und parsen.
+2. **Identität auflösen über `resource`** (falls vorhanden), sonst über `id`. Dasselbe Konzept
+   unter anderer `id` aber gleicher `resource` wird **vereinigt, nicht geforkt** (kein `-v2`).
+3. **Anreichern statt überschreiben:** `statements`, `sources` und `citations` werden
+   **vereinigt**. Kein Knoten, keine Kante, kein Statement, kein Zitat und kein Fakt aus dem
+   Vorgänger-Graph darf entfernt werden. Der gemergte Graph darf **nie weniger** Knoten,
+   Kanten, Fakten oder Zitate haben als zuvor.
+4. **Widersprüche werden zur Zeitreihe, nicht aufgelöst:** Liefern zwei Fakten zum selben
+   Konzept+Kennzahl verschiedene `value`s → **beide behalten** (verschiedene `temporal`-Perioden)
+   und eine `tension`-Kante setzen; wenn einer den anderen ablöst, eine `replaces`-Kante mit
+   `valid_until` auf dem abgelösten Eintrag. (Damit wird „Zeitreihe statt Widerspruch" real.)
+5. **Versionierung:** Vorherigen Graph als `.knowledge.v{N}.json` archivieren (max. 5).
+6. **Delta-Output:** `.knowledge.diff.md` mit nur den Änderungen.
+7. **Erzwingen:** Der Merge wird mit
+   `python3 scripts/validate_knowledge.py --prev <vorher>.json <neu>.json` geprüft — schrumpft
+   der Graph, schlägt die Validierung fehl (ERROR). Der Monotonie-Vertrag ist Code, nicht Vorsatz.
 
 ### Batch-Modus
 Bei Ordner-Eingabe:
@@ -280,27 +306,33 @@ Bei Ordner-Eingabe:
 
 ### 4.1 Markdown-Output (`.knowledge.md`)
 
+> **Wird deterministisch erzeugt:** `python3 scripts/build_md.py <out>.knowledge.json`.
+> Das Modell schreibt das Wissen in die `.knowledge.json`; die `.md` (Frontmatter, Concept Map,
+> Kernwissen, Mermaid, Fakten, Quellen) wird daraus gerendert — so driften `.md` und `.json` nie
+> auseinander (`SPEC.md` §5/§8).
+
 #### Frontmatter-Block
 ```yaml
 ---
 title: "{Titel des Wissensgraphen}"
-source: "{Quelldatei(en)}"
-source_type: "{pdf|docx|pptx|xlsx|csv|json|txt|md|html|image|url}"
-source_date: "{ISO 8601}"
-distillation_date: "{ISO 8601}"
 distiller_version: "4.0"
+distiller_spec_version: "1.0"
+distillation_date: "{ISO 8601}"
 domain: "{Fachgebiet}"
 language: "{de|en}"
 depth: "{quick|standard|deep}"
 mode: "{fresh|merge|batch}"
-quality_score: {0-100}
+quality_score: {0-100}          # aus validate_knowledge.py, NICHT geschätzt
 temporal_confidence: "{explicit|inferred|unknown}"
-concept_count: {N}
-relationship_count: {N}
-cluster_count: {N}
+concept_count: {N}              # = len(nodes), per build_graph.py
+relationship_count: {N}         # = len(edges)
+cluster_count: {N}              # = len(clusters)
 sources:
-  - file: "{Dateiname}"
+  - id: "s1"                    # Zitat-Nummer [1] = 1. Quelle, [2] = 2. Quelle, ...
+    file: "{Dateiname}"
+    type: "{pdf|docx|…|url}"
     date: "{ISO 8601}"
+    url: "{URL oder null}"
 clusters:
   "{cluster-id}":
     label: "{Cluster-Name}"
@@ -369,8 +401,9 @@ graph LR
 
 | Fakt | Wert | Zeitbezug | Konfidenz | Quelle |
 |------|------|-----------|-----------|--------|
-| {Beschreibung} | {Zahl/Aussage} | {Zeitraum} | {high/medium/low} | {Datei} |
+| {Beschreibung} | {Zahl/Aussage} | {Zeitraum} | {high/medium/low} | [{n}] |
 ```
+Die `Quelle`-Spalte verweist mit `[n]` auf die nummerierte Quellenliste (`## Quellen`).
 
 #### Offene Fragen (bei `deep` Modus)
 ```
@@ -389,6 +422,17 @@ graph LR
 
 > {Chunk 2: ...}
 ```
+
+#### Quellen (nummerierte Zitatliste — Auflösungsziel für jeden `[n]`-Marker)
+```
+## Quellen
+
+[1] [{Label oder Dateiname}]({URL oder Pfad}) — {Typ}, {Datum}
+[2] ...
+```
+Jede `Kernaussage` und jeder Fakt SOLL die stützende Quelle mit `[n]` markieren (`n` = Position
+in `## Quellen` / `metadata.sources`). `validate_knowledge.py` prüft, dass jeder `[n]` auflösbar
+ist, und warnt bei Knoten ganz ohne Beleg.
 
 #### Provenance-Footer
 ```
@@ -416,16 +460,18 @@ Qualitäts-Score: {Score}/100
   },
   "metadata": {
     "title": "",
+    "distiller_version": "4.0",
+    "distiller_spec_version": "1.0",
     "sources": [
       {
+        "id": "s1",
         "file": "",
         "type": "",
         "date": "",
-        "url": ""
+        "url": null
       }
     ],
     "distillation_date": "",
-    "distiller_version": "4.0",
     "domain": "",
     "language": "",
     "depth": "",
@@ -433,7 +479,8 @@ Qualitäts-Score: {Score}/100
     "quality_score": 0,
     "concept_count": 0,
     "relationship_count": 0,
-    "cluster_count": 0
+    "cluster_count": 0,
+    "fact_count": 0
   },
   "clusters": [
     {
@@ -451,8 +498,9 @@ Qualitäts-Score: {Score}/100
       "confidence": "high|medium|low",
       "definition": "",
       "relevance": "",
+      "resource": null,
       "statements": [
-        ""
+        "{Aussage, optional mit Beleg-Marker [n]}"
       ],
       "temporal": {
         "source_date": "",
@@ -461,7 +509,10 @@ Qualitäts-Score: {Score}/100
         "valid_until": "",
         "temporal_confidence": "explicit|inferred|unknown"
       },
-      "sources": []
+      "sources": ["s1"],
+      "citations": [
+        {"n": 1, "source": "s1", "locator": null, "label": "", "url": null}
+      ]
     }
   ],
   "edges": [
@@ -490,7 +541,7 @@ Qualitäts-Score: {Score}/100
         "temporal_confidence": ""
       },
       "confidence": "",
-      "source": ""
+      "source": "s1"
     }
   ],
   "chunks": [
@@ -505,7 +556,27 @@ Qualitäts-Score: {Score}/100
 }
 ```
 
-### 4.3 Zusätzliche Ausgabeformate (NEU v4.0)
+### 4.3 Interaktiver Viewer & Bundle (NEU v4.0 / Spec 1.0)
+
+#### Self-contained HTML-Viewer (`.knowledge.html`)
+Bei `format: all` aus dem Graphen erzeugen:
+```bash
+python3 scripts/build_viewer.py <out>.knowledge.json
+```
+Ergebnis ist eine **einzelne, offline öffenbare** HTML-Datei (Cytoscape-Graph + Detailpane):
+Farbe nach Cluster, Knotengröße nach Inhalt, Kantenstärke nach `weight`, abgelöste Knoten
+(`valid_until` oder eingehende `replaces`-Kante) ausgegraut, „Cited by"-Backlinks zur Laufzeit.
+
+#### Bundle-Ausgabe (`format: bundle`) — skalierbar, git-freundlich
+```bash
+python3 scripts/build_bundle.py <out>.knowledge.json -o <name>/
+```
+Erzeugt einen Verzeichnisbaum mit **einer Datei pro Konzept** plus deterministisch generierten
+`index.md`-Manifesten auf jeder Ebene und `# Citations` je Blatt (`SPEC.md` §7). Konzept-ID =
+Pfad unter `concepts/<cluster>/` ohne `.md`. Sinnvoll ab großen Korpora (saubere Diffs, atomare
+Einzeländerungen, progressive disclosure). Das monolithische Dual-Format bleibt Default.
+
+### 4.4 Weitere Exportformate (NEU v4.0)
 
 #### Neo4j Cypher-Export (`.knowledge.cypher`)
 Nur bei `format: all` generieren:
@@ -554,12 +625,12 @@ Nur bei `format: all` generieren. JSON-Struktur für Obsidian Canvas:
   "hooks": {
     "post-tool": [
       {
-        "description": "JSON-LD nach Schreibung validieren",
+        "description": "Graph nach Schreibung gegen SPEC/Schema validieren",
         "matcher": {
           "tool_name": "Write",
           "file_pattern": "*.knowledge.json"
         },
-        "command": "python3 -c \"import json,sys; json.load(open(sys.argv[1])); print('JSON valid')\" \"$TOOL_INPUT_FILE_PATH\""
+        "command": "python3 scripts/validate_knowledge.py \"$TOOL_INPUT_FILE_PATH\" --quiet"
       }
     ]
   }
@@ -568,6 +639,23 @@ Nur bei `format: all` generieren. JSON-Struktur für Obsidian Canvas:
 
 ### Auto-Trigger (für fortgeschrittene Nutzung)
 Benutzer können einen Scheduled Task einrichten der regelmäßig einen Ordner auf neue Dokumente prüft und automatisch destilliert.
+
+---
+
+## Deterministische Skripte (`scripts/`)
+
+Diese Skripte erzwingen das Format und erzeugen alle abgeleiteten Artefakte. Reine
+Standardbibliothek; `validate_knowledge.py` nutzt zusätzlich `jsonschema`, falls installiert.
+
+| Skript | Zweck |
+|--------|-------|
+| `validate_knowledge.py <json> [--prev <alt>] [--md <md>]` | Validiert gegen `SPEC.md`/Schema, trennt ERRORS/WARNINGS, liefert reproduzierbaren `quality_score`, erzwingt den Merge-Monotonie-Vertrag. Exit 0 = konform. |
+| `build_graph.py <json> --write` | Berechnet Zähler, Cluster-Mitgliedschaft, kanonische Kanten-IDs und `quality_score`; kann Concept Map + Mermaid ausgeben (`--emit-md`). |
+| `build_md.py <json>` | Rendert die `.knowledge.md` deterministisch aus dem Graphen. |
+| `build_bundle.py <json> -o <dir>` | Explodiert den Graphen in ein Verzeichnis-Bundle (`SPEC.md` §7). |
+| `build_viewer.py <json>` | Erzeugt den self-contained `.knowledge.html`-Viewer. |
+
+Tests: `python3 -m pytest tests/` (bzw. `python3 -m unittest discover tests`).
 
 ---
 
@@ -607,19 +695,20 @@ Benutzer können einen Scheduled Task einrichten der regelmäßig einen Ordner a
 4. SYNTHESE
    └── Synthesis-Agent: Zusammenführung, Deduplizierung, Chunk-Erzeugung
 
-5. VALIDIERUNG
-   └── Validation-Agent: Qualitätsprüfung, Self-Healing bei Score < 80
+5. VALIDIERUNG (deterministisch)
+   ├── build_graph.py --write   → Zähler, Cluster, Kanten-IDs, quality_score
+   └── validate_knowledge.py    → ERRORS/WARNINGS, Self-Healing bis 0 ERRORS (max 2x)
 
 6. MERGE (falls mode=merge)
    └── Bestehenden Graph laden, Delta berechnen, zusammenführen
 
-7. OUTPUT
-   ├── .knowledge.md (immer)
-   ├── .knowledge.json (bei format: json/both/all)
+7. OUTPUT (abgeleitete Artefakte per Skript erzeugen, nicht von Hand)
+   ├── .knowledge.json (kanonisch; build_graph.py füllt abgeleitete Felder)
+   ├── .knowledge.md (build_md.py)
    ├── .knowledge.diff.md (bei mode: merge)
-   ├── .knowledge.cypher (bei format: all)
-   ├── .knowledge.ctxt (bei format: all)
-   ├── .knowledge.canvas (bei format: all)
+   ├── .knowledge.html (build_viewer.py, bei format: all)
+   ├── <name>/ Bundle (build_bundle.py, bei format: bundle)
+   ├── .knowledge.cypher / .ctxt / .canvas (bei format: all)
    └── Temporäre Dateien aufräumen
 
 8. ABSCHLUSS
@@ -635,3 +724,4 @@ Benutzer können einen Scheduled Task einrichten der regelmäßig einen Ordner a
 | 3.0 | 2026-03 | Initiale Version mit Dual-Output |
 | 3.1 | 2026-03 | Temporale Dimension (3 Zeitebenen) |
 | **4.0** | **2026-04** | **Multi-Agent-Pipeline, Inkrementelle Verarbeitung, Context-Management, Validation-Agent, erweiterte Ausgabeformate, Hook-Integration, standardisierte Frontmatter** |
+| **4.0 / Spec 1.0** | **2026-06** | **Formale `SPEC.md` + JSON-Schema, deterministische Validierung & abgeleitete Artefakte (`scripts/`), Quellenbelege pro Aussage (`[n]` + `## Quellen`), `resource`-Identität, monotoner Merge-Vertrag, skalierbares Bundle-Format, self-contained HTML-Viewer, Testsuite** |
