@@ -13,14 +13,112 @@ Pure standard library.
 from __future__ import annotations
 
 import argparse
+import copy
 import json
+import os
+import re
 import sys
+import tempfile
 from pathlib import Path
+from urllib.parse import parse_qsl, urlsplit
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import build_graph as bg  # noqa: E402
+import strict_json  # noqa: E402
 
 REL = bg.EDGE_DISPLAY
+OPTIONAL_OBJECT_COLLECTIONS = (
+    "facts", "chunks", "evidence", "claims", "assessments", "fact_conflicts",
+)
+CREDENTIAL_QUERY_NAMES = {
+    "accesskey", "apikey", "auth", "authorization", "awsaccesskeyid", "clientsecret",
+    "credential", "jwt", "password", "passwd", "secret", "secretkey", "sessionid",
+    "sig", "signature", "token",
+}
+CREDENTIAL_QUERY_SUFFIXES = ("token", "apikey", "secret", "password", "credential", "signature")
+
+
+class RenderInputError(ValueError):
+    """The strict JSON value cannot be consumed as a knowledge graph."""
+
+
+def object_records(value) -> list[dict]:
+    """Return only object records from an optional consumer collection."""
+    return [item for item in value if isinstance(item, dict)] if isinstance(value, list) else []
+
+
+def string_items(value) -> list[str]:
+    return [item for item in value if isinstance(item, str)] if isinstance(value, list) else []
+
+
+def consumer_safe_copy(doc: dict) -> dict:
+    """Copy a graph and skip malformed optional collection items for rendering."""
+    if not isinstance(doc, dict):
+        raise RenderInputError("graph root must be a JSON object")
+    result = copy.deepcopy(doc)
+    for key in OPTIONAL_OBJECT_COLLECTIONS:
+        result[key] = object_records(result.get(key, []))
+    if isinstance(result.get("open_questions"), list):
+        result["open_questions"] = string_items(result["open_questions"])
+    return result
+
+
+def safe_link(url) -> str | None:
+    """Return only browser-safe links; source data is always untrusted."""
+    if not isinstance(url, str):
+        return None
+    try:
+        parsed = urlsplit(url)
+    except ValueError:
+        return None
+    if parsed.scheme.lower() not in {"http", "https"} or not parsed.hostname:
+        return None
+    if parsed.username is not None or parsed.password is not None:
+        return None
+    for name, _ in parse_qsl(parsed.query, keep_blank_values=True):
+        normalized = re.sub(r"[^a-z0-9]+", "", name.lower())
+        if normalized in CREDENTIAL_QUERY_NAMES or normalized.endswith(CREDENTIAL_QUERY_SUFFIXES):
+            return None
+    return url
+
+
+def cell(value) -> str:
+    """Escape a value for a Markdown table cell."""
+    return str(value or "").replace("|", "\\|").replace("\r", " ").replace("\n", " ")
+
+
+def spatial_label(contexts) -> str:
+    items = []
+    for context in object_records(contexts):
+        place = context.get("place")
+        place = place if isinstance(place, dict) else {}
+        label = place.get("label") or place.get("id")
+        if label:
+            item = f"{context.get('role', 'place')}: {label} ({context.get('basis', 'unknown')})"
+            if context.get("confidence"):
+                item += f" · confidence: {context['confidence']}"
+            if context.get("evidence"):
+                item += f" · evidence: {evidence_refs(context['evidence'])}"
+            derivation = context.get("derivation")
+            if isinstance(derivation, dict) and derivation.get("summary"):
+                item += f" · derivation: {derivation['summary']}"
+            items.append(item)
+    return "; ".join(items)
+
+
+def evidence_refs(ids) -> str:
+    return ", ".join(f"`{identifier}`" for identifier in string_items(ids)) or "—"
+
+
+def json_value(value) -> str:
+    """Render one value as exact JSON, preserving whitespace inside strings."""
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+
+
+def json_details(label: str, value) -> list[str]:
+    """Return an indented JSON code block that cannot be closed by source text."""
+    encoded = json.dumps(value, ensure_ascii=False, indent=2)
+    return [f"**{label}:**", "", *(f"    {line}" for line in encoded.splitlines()), ""]
 
 
 def y(v) -> str:
@@ -31,13 +129,18 @@ def y(v) -> str:
     if isinstance(v, (int, float)):
         return str(v)
     s = str(v)
-    if s == "" or s.strip() != s or any(c in s for c in ':#[]{}&*!|>\'"%@`'):
-        return '"' + s.replace('"', '\\"') + '"'
-    return s
+    # JSON double-quoted strings are valid YAML scalars and avoid the many semantic
+    # traps of plain YAML (booleans, numbers, list punctuation and document markers).
+    # Escape YAML's additional Unicode line/control characters while retaining normal
+    # non-ASCII prose for readable generated Markdown.
+    encoded = json.dumps(s, ensure_ascii=False)
+    for codepoint in (*range(0x7F, 0xA0), 0x2028, 0x2029):
+        encoded = encoded.replace(chr(codepoint), f"\\u{codepoint:04x}")
+    return encoded
 
 
 def zeitbezug(temporal: dict) -> str:
-    if not temporal:
+    if not isinstance(temporal, dict) or not temporal:
         return "—"
     parts = []
     vf, vu = temporal.get("valid_from"), temporal.get("valid_until")
@@ -66,6 +169,7 @@ def frontmatter(doc: dict) -> str:
              f"language: {y(m.get('language'))}",
              f"depth: {y(m.get('depth'))}",
              f"mode: {y(m.get('mode'))}",
+             f"conformance_score: {y(m.get('conformance_score', m.get('quality_score')))}",
              f"quality_score: {y(m.get('quality_score'))}",
              f"temporal_confidence: {y(m.get('temporal_confidence'))}",
              f"concept_count: {y(m.get('concept_count'))}",
@@ -80,6 +184,11 @@ def frontmatter(doc: dict) -> str:
             lines.append(f"    date: {y(s.get('date'))}")
         if s.get("url") is not None:
             lines.append(f"    url: {y(s.get('url'))}")
+        for field in ("title", "publisher", "version", "retrieved_at", "content_sha256", "license"):
+            if s.get(field) is not None:
+                lines.append(f"    {field}: {y(s.get(field))}")
+        if s.get("authors"):
+            lines.append("    authors: [" + ", ".join(y(author) for author in s["authors"]) + "]")
     lines.append("clusters:")
     for c in doc.get("clusters", []) or []:
         lines.append(f"  {y(c.get('id'))}:")
@@ -96,6 +205,11 @@ def kernwissen(doc: dict) -> str:
     out_edges: dict[str, list] = {}
     for e in doc.get("edges", []) or []:
         out_edges.setdefault(e.get("source"), []).append(e)
+    claims_by_node: dict[str, list] = {}
+    for claim in object_records(doc.get("claims", [])):
+        node_id = claim.get("node")
+        if isinstance(node_id, str):
+            claims_by_node.setdefault(node_id, []).append(claim)
 
     lines = ["## Kernwissen", ""]
     for n in doc.get("nodes", []) or []:
@@ -105,6 +219,12 @@ def kernwissen(doc: dict) -> str:
         lines.append(f"📊 Confidence: `{n.get('confidence','')}` | "
                      f"🏷️ Cluster: {cluster_label.get(n.get('cluster'), n.get('cluster',''))} | "
                      f"📅 {zeitbezug(n.get('temporal', {}))}")
+        if n.get("resource"):
+            lines.append(f"🔗 Resource: `{n.get('resource')}`")
+        if n.get("sources"):
+            lines.append(f"📚 Sources: {evidence_refs(n.get('sources'))}")
+        if n.get("spatial_contexts"):
+            lines.append(f"🌍 Spatial: {spatial_label(n.get('spatial_contexts'))}")
         lines.append("")
         lines.append(f"**Definition:** {n.get('definition','')}")
         lines.append("")
@@ -116,11 +236,32 @@ def kernwissen(doc: dict) -> str:
             for e in rels:
                 phrase = REL.get(e.get("type"), f"→ {e.get('type')}:")
                 tl = nodes_by_id.get(e.get("target"), {}).get("label", e.get("target"))
-                lines.append(f"- {phrase} [[{tl}]]")
+                detail = ""
+                if e.get("explanation"):
+                    detail += f" — {e.get('explanation')} ({e.get('origin', 'origin unknown')})"
+                if e.get("evidence"):
+                    detail += f" — Evidence: {evidence_refs(e.get('evidence'))}"
+                lines.append(f"- {phrase} [[{tl}]]{detail}")
             lines.append("")
         lines.append("**Kernaussagen:**")
         for st in n.get("statements", []) or []:
             lines.append(f"- {st}")
+            for claim in claims_by_node.get(nid, []):
+                if claim.get("statement") == st:
+                    lines.append(f"  - Claim `{claim.get('id')}` · confidence `{claim.get('confidence')}` · "
+                                 f"origin `{claim.get('origin')}` · review "
+                                 f"`{claim.get('review_status', 'unspecified')}` · evidence "
+                                 f"{evidence_refs(claim.get('evidence'))}")
+        if n.get("note"):
+            lines.extend(["", f"> {n.get('note')}"])
+        if n.get("evidence"):
+            lines.extend(["", f"**Evidence:** {evidence_refs(n.get('evidence'))}"])
+        if n.get("temporal"):
+            lines.extend(["", *json_details("Temporal record", n.get("temporal"))])
+        if n.get("spatial_contexts"):
+            lines.extend(json_details("Spatial context records", n.get("spatial_contexts")))
+        if n.get("citations"):
+            lines.extend(json_details("Citation records", n.get("citations")))
         lines.append("")
         lines.append("---")
         lines.append("")
@@ -128,18 +269,44 @@ def kernwissen(doc: dict) -> str:
 
 
 def facts_table(doc: dict) -> str:
-    facts = doc.get("facts", []) or []
+    facts = object_records(doc.get("facts", []))
     if not facts:
         return ""
     src_n = {s.get("id"): i for i, s in enumerate(doc.get("metadata", {}).get("sources", []) or [], start=1)}
-    lines = ["## Fakten & Daten", "", "| Fakt | Wert | Zeitbezug | Konfidenz | Quelle |",
-             "|------|------|-----------|-----------|--------|"]
+    lines = ["## Fakten & Daten", "", "| ID | Fakt | Wert | Kontext | Zeitbezug | Raum | Konfidenz | Quelle | Origin | Evidence |",
+             "|----|------|------|---------|-----------|------|-----------|--------|--------|----------|"]
     for f in facts:
-        t = f.get("temporal", {}) or {}
+        t = f.get("temporal")
+        t = t if isinstance(t, dict) else {}
         when = t.get("valid_from") or t.get("source_period") or t.get("source_date") or ""
-        n = src_n.get(f.get("source"), "")
-        lines.append(f"| {f.get('statement','')} | {f.get('value','')} | {when} | "
-                     f"{f.get('confidence','')} | [{n}] |")
+        source_id = f.get("source")
+        n = src_n.get(source_id, "") if isinstance(source_id, str) else ""
+        explanation = f.get("explanation") or ""
+        context = f.get("context") or explanation
+        lines.append(f"| {cell(f.get('id'))} | {cell(f.get('statement'))} | {cell(f.get('value'))} | {cell(context)} | {cell(when)} | "
+                     f"{cell(spatial_label(f.get('spatial_contexts')))} | {cell(f.get('confidence'))} | [{n}] | "
+                     f"{cell(f.get('origin'))} | {cell(', '.join(string_items(f.get('evidence'))))} |")
+    lines.extend(["", "### Fact provenance", ""])
+    for fact in facts:
+        lines.extend([
+            f"#### `{fact.get('id')}`",
+            "",
+            f"- Source: `{fact.get('source')}`",
+            f"- Concept: {json_value(fact.get('concept'))}",
+            f"- Metric: {json_value(fact.get('metric'))}",
+            f"- Confidence: `{fact.get('confidence')}`",
+            f"- Origin: `{fact.get('origin', 'unspecified')}`",
+            f"- Evidence: {evidence_refs(fact.get('evidence'))}",
+            "",
+        ])
+        if fact.get("explanation") is not None:
+            lines.extend(json_details("Explanation", fact.get("explanation")))
+        if fact.get("temporal") is not None:
+            lines.extend(json_details("Temporal record", fact.get("temporal")))
+        if fact.get("spatial_contexts") is not None:
+            lines.extend(json_details("Spatial context records", fact.get("spatial_contexts")))
+        if fact.get("derivation") is not None:
+            lines.extend(json_details("Derivation", fact.get("derivation")))
     return "\n".join(lines) + "\n"
 
 
@@ -154,28 +321,169 @@ def open_questions(doc: dict) -> str:
 
 
 def chunks_section(doc: dict) -> str:
-    chs = doc.get("chunks", []) or []
+    chs = object_records(doc.get("chunks", []))
     if not chs:
         return ""
     lines = ["## Chunks (Embedding-optimiert)", ""]
     for ch in chs:
-        lines.append(f"> {ch.get('text','')}")
+        kind = ch.get("kind", "source_claims")
+        default = ch.get("include_in_default_retrieval", kind != "inference")
+        lines.append(f"### `{ch.get('id', 'chunk')}`")
         lines.append("")
+        lines.append(f"- Kind: `{kind}`")
+        lines.append(f"- Concepts: {evidence_refs(ch.get('concepts'))}")
+        lines.append(f"- Temporal scope: {json_value(ch.get('temporal_scope'))}")
+        lines.append(f"- Token estimate: {json_value(ch.get('token_estimate'))}")
+        lines.append(f"- Origin: `{ch.get('origin', 'unspecified')}`")
+        lines.append(f"- Evidence: {evidence_refs(ch.get('evidence'))}")
+        lines.append(f"- Include in default retrieval: `{str(bool(default)).lower()}`")
+        lines.append("")
+        if ch.get("spatial_contexts"):
+            lines.append(f"Spatial summary: {spatial_label(ch.get('spatial_contexts'))}")
+            lines.append("")
+        lines.extend(json_details("Text", ch.get("text", "")))
+        if ch.get("spatial_contexts") is not None:
+            lines.extend(json_details("Spatial context records", ch.get("spatial_contexts")))
+        if ch.get("derivation") is not None:
+            lines.extend(json_details("Derivation", ch.get("derivation")))
     return "\n".join(lines).rstrip() + "\n"
 
 
 def quellen(doc: dict) -> str:
     lines = ["## Quellen", ""]
-    for i, s in enumerate(doc.get("metadata", {}).get("sources", []) or [], start=1):
+    metadata = doc.get("metadata") if isinstance(doc.get("metadata"), dict) else {}
+    for i, s in enumerate(object_records(metadata.get("sources", [])), start=1):
         label = s.get("file", s.get("id"))
-        url = s.get("url")
+        url = safe_link(s.get("url"))
         link = f"[{label}]({url})" if url else label
-        extra = ", ".join(x for x in [s.get("type"), s.get("date")] if x)
-        lines.append(f"[{i}] {link}" + (f" — {extra}" if extra else ""))
+        extra = ", ".join(str(x) for x in [s.get("type"), s.get("date"), s.get("publisher"), s.get("content_sha256")] if x)
+        lines.append(f"### [{i}] {link}")
+        lines.append("")
+        lines.append(f"- ID: `{s.get('id')}`")
+        if extra:
+            lines.append(f"- Summary: {extra}")
+        for field in ("title", "version", "retrieved_at", "license"):
+            if s.get(field) is not None:
+                lines.append(f"- {field}: {json_value(s.get(field))}")
+        lines.append("")
+        if s.get("authors") is not None:
+            lines.extend(json_details("Authors", s.get("authors")))
+        if s.get("agents") is not None:
+            lines.extend(json_details("Source agents", s.get("agents")))
+    return "\n".join(lines) + "\n"
+
+
+def evidence_section(doc: dict) -> str:
+    records = object_records(doc.get("evidence", []))
+    if not records:
+        return ""
+    lines = ["## Evidence", ""]
+    for record in records:
+        lines.extend([
+            f"### `{record.get('id')}`",
+            "",
+            f"- Source: `{record.get('source')}`",
+            f"- Support: `{record.get('support')}`",
+            f"- Attribution basis: `{record.get('attribution_basis')}`",
+            f"- Review status: `{record.get('review_status', 'unspecified')}`",
+            "",
+        ])
+        lines.extend(json_details("Selector", record.get("selector")))
+        if record.get("excerpt") is not None:
+            lines.extend(json_details("Excerpt", record.get("excerpt")))
+        if record.get("excerpt_sha256") is not None:
+            lines.append(f"**Excerpt SHA-256:** `{record.get('excerpt_sha256')}`")
+            lines.append("")
+        if record.get("derivation") is not None:
+            lines.extend(json_details("Derivation", record.get("derivation")))
+    return "\n".join(lines) + "\n"
+
+
+def claims_section(doc: dict) -> str:
+    records = object_records(doc.get("claims", []))
+    if not records:
+        return ""
+    lines = ["## Claims", ""]
+    for record in records:
+        lines.extend([
+            f"### `{record.get('id')}`",
+            "",
+            f"- Node: `{record.get('node')}`",
+            f"- Confidence: `{record.get('confidence')}`",
+            f"- Origin: `{record.get('origin')}`",
+            f"- Review status: `{record.get('review_status', 'unspecified')}`",
+            f"- Evidence: {evidence_refs(record.get('evidence'))}",
+            "",
+        ])
+        lines.extend(json_details("Statement", record.get("statement")))
+        if record.get("temporal") is not None:
+            lines.extend(json_details("Temporal record", record.get("temporal")))
+        if record.get("spatial_contexts") is not None:
+            lines.extend(json_details("Spatial context records", record.get("spatial_contexts")))
+        if record.get("derivation") is not None:
+            lines.extend(json_details("Derivation", record.get("derivation")))
+    return "\n".join(lines) + "\n"
+
+
+def edges_section(doc: dict) -> str:
+    records = object_records(doc.get("edges", []))
+    if not records:
+        return ""
+    lines = ["## Relationship provenance", ""]
+    for record in records:
+        edge_id = record.get("id") or bg.canonical_edge_id(record)
+        lines.extend([
+            f"### `{edge_id}`",
+            "",
+            f"- Endpoints: `{record.get('source')}` → `{record.get('target')}`",
+            f"- Type: `{record.get('type')}`",
+            f"- Weight: `{record.get('weight')}`",
+            f"- Confidence: `{record.get('confidence')}`",
+            f"- Origin: `{record.get('origin', 'unspecified')}`",
+            f"- Evidence: {evidence_refs(record.get('evidence'))}",
+            "",
+        ])
+        for label, field in (("Label", "label"), ("Explanation", "explanation")):
+            if record.get(field) is not None:
+                lines.extend(json_details(label, record.get(field)))
+        if record.get("temporal") is not None:
+            lines.extend(json_details("Temporal record", record.get("temporal")))
+        if record.get("spatial_contexts") is not None:
+            lines.extend(json_details("Spatial context records", record.get("spatial_contexts")))
+        if record.get("derivation") is not None:
+            lines.extend(json_details("Derivation", record.get("derivation")))
+    return "\n".join(lines) + "\n"
+
+
+def assessments_section(doc: dict) -> str:
+    records = object_records(doc.get("assessments", []))
+    if not records:
+        return ""
+    lines = ["## Assessments", "", "| ID | Dimension | Scope | Value | Assessor | Method | Assessed at | Evidence |",
+             "|----|-----------|-------|-------|----------|--------|-------------|----------|"]
+    for record in records:
+        lines.append("| " + " | ".join(cell(value) for value in (
+            record.get("id"), record.get("dimension"), record.get("scope"), record.get("value"),
+            record.get("assessor"), record.get("method"), record.get("assessed_at"),
+            ", ".join(string_items(record.get("evidence"))),
+        )) + " |")
+    return "\n".join(lines) + "\n"
+
+
+def conflicts_section(doc: dict) -> str:
+    records = object_records(doc.get("fact_conflicts", []))
+    if not records:
+        return ""
+    lines = ["## Fact Conflicts", ""]
+    for record in records:
+        lines.append(f"- `{record.get('id')}`: `{record.get('relation')}` between "
+                     f"{', '.join('`' + item + '`' for item in string_items(record.get('facts')))} — "
+                     f"{record.get('reason')} — Evidence: {evidence_refs(record.get('evidence'))}")
     return "\n".join(lines) + "\n"
 
 
 def render(doc: dict) -> str:
+    doc = consumer_safe_copy(doc)
     bg.recompute(doc)
     m = doc.get("metadata", {})
     parts = [frontmatter(doc), "",
@@ -183,6 +491,9 @@ def render(doc: dict) -> str:
              "---", "",
              kernwissen(doc), "",
              bg.render_mermaid(doc), ""]
+    edges = edges_section(doc)
+    if edges:
+        parts += [edges, ""]
     ft = facts_table(doc)
     if ft:
         parts += [ft, ""]
@@ -192,12 +503,90 @@ def render(doc: dict) -> str:
     ch = chunks_section(doc)
     if ch:
         parts += [ch, ""]
+    ev = evidence_section(doc)
+    if ev:
+        parts += [ev, ""]
+    claims = claims_section(doc)
+    if claims:
+        parts += [claims, ""]
+    assessments = assessments_section(doc)
+    if assessments:
+        parts += [assessments, ""]
+    conflicts = conflicts_section(doc)
+    if conflicts:
+        parts += [conflicts, ""]
     parts += [quellen(doc), "",
               "---", "",
               f"> Destilliert am {m.get('distillation_date','')} mit Knowledge Distiller "
               f"v{m.get('distiller_version','4.0')} (Spec {m.get('distiller_spec_version','1.0')})",
-              f"> Qualitäts-Score: {m.get('quality_score','?')}/100", ""]
+              f"> Conformance-Score: {m.get('conformance_score', m.get('quality_score','?'))}/100",
+              "> Semantische Richtigkeit: nicht durch den Validator bewertet", ""]
     return "\n".join(parts)
+
+
+class MarkdownOutputError(ValueError):
+    """The requested derived Markdown target is not safe for this input."""
+
+
+def _output_path(input_path: Path, explicit_output: str | None) -> Path:
+    """Resolve a distinct Markdown target and never fall back to the input name."""
+    if explicit_output is None:
+        if not input_path.name.endswith(".knowledge.json"):
+            raise MarkdownOutputError(
+                "input must end with .knowledge.json when --out is omitted"
+            )
+        output = input_path.with_name(
+            input_path.name.removesuffix(".knowledge.json") + ".knowledge.md"
+        )
+    else:
+        output = Path(explicit_output)
+
+    if output.suffix.lower() != ".md":
+        raise MarkdownOutputError("output must end with .md")
+    if output.is_symlink():
+        raise MarkdownOutputError(f"output is a symlink; refusing to replace it: {output}")
+    if output.exists() and not output.is_file():
+        raise MarkdownOutputError(f"output is not a regular file: {output}")
+
+    try:
+        same_target = output.resolve(strict=False) == input_path.resolve(strict=True)
+        if output.exists():
+            same_target = same_target or os.path.samefile(input_path, output)
+    except OSError as exc:
+        raise MarkdownOutputError(f"could not validate output target: {exc}") from exc
+    if same_target:
+        raise MarkdownOutputError("output must be different from the input file")
+    return output
+
+
+def _write_markdown(output: Path, content: str) -> None:
+    """Atomically replace one validated Markdown target."""
+    parent = output.parent
+    if not parent.exists() or not parent.is_dir():
+        raise MarkdownOutputError(f"output directory does not exist: {parent}")
+    temp_name: str | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=parent,
+            prefix=".kd-markdown-",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            temp_name = handle.name
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.chmod(temp_name, 0o644)
+        os.replace(temp_name, output)
+        temp_name = None
+    finally:
+        if temp_name is not None:
+            try:
+                Path(temp_name).unlink()
+            except FileNotFoundError:
+                pass
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -207,12 +596,12 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
     path = Path(args.file)
     try:
-        doc = json.loads(path.read_text(encoding="utf-8"))
-    except Exception as e:
-        print(f"{args.file}: could not read JSON: {e}", file=sys.stderr)
-        return 1
-    out = Path(args.out) if args.out else path.with_name(path.name.replace(".knowledge.json", ".knowledge.md"))
-    out.write_text(render(doc), encoding="utf-8")
+        out = _output_path(path, args.out)
+        doc = strict_json.load_path(path)
+        _write_markdown(out, render(doc))
+    except (MarkdownOutputError, RenderInputError, strict_json.StrictJsonError, OSError) as e:
+        print(f"{args.file}: refusing Markdown build: {e}", file=sys.stderr)
+        return 2
     print(f"wrote {out}")
     return 0
 

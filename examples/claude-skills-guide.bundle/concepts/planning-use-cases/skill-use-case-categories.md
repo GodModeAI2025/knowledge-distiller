@@ -1,16 +1,16 @@
 ---
 type: Concept
-id: skill-use-case-categories
-label: Skill Use Case Categories
-cluster: planning-use-cases
-confidence: high
+id: "skill-use-case-categories"
+label: "Skill Use Case Categories"
+cluster: "planning-use-cases"
+confidence: "high"
 temporal:
-  source_date: 2026-01
+  source_date: "2026-01"
   source_period: null
-  valid_from: 2025
+  valid_from: "2025"
   valid_until: null
-  temporal_confidence: inferred
-sources: [s1]
+  temporal_confidence: "inferred"
+sources: ["s1"]
 ---
 
 # Skill Use Case Categories

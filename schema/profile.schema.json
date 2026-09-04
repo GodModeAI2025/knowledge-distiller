@@ -1,0 +1,332 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:knowledge-distiller:profile-schema:1.0",
+  "title": "Knowledge Distiller Compiler and Extraction Profile 1.0",
+  "description": "Operational compiler policy kept separate from the canonical knowledge graph schema. Unknown properties are warnings in the authoritative validator, not schema errors.",
+  "type": "object",
+  "required": [
+    "$schema",
+    "profile_version",
+    "profile_id",
+    "description",
+    "compiler",
+    "extraction",
+    "retrieval",
+    "limits"
+  ],
+  "properties": {
+    "$schema": {"const": "../schema/profile.schema.json"},
+    "profile_version": {"const": "1.0"},
+    "profile_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+      "maxLength": 80
+    },
+    "description": {"type": "string", "minLength": 1, "maxLength": 500},
+    "compiler": {
+      "type": "object",
+      "required": [
+        "evidence_policy",
+        "inference_policy",
+        "spatial_policy",
+        "graph_policy"
+      ],
+      "properties": {
+        "evidence_policy": {"$ref": "#/$defs/evidencePolicy"},
+        "inference_policy": {"$ref": "#/$defs/inferencePolicy"},
+        "spatial_policy": {"$ref": "#/$defs/spatialPolicy"},
+        "graph_policy": {"$ref": "#/$defs/graphPolicy"}
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "spatial_policy": {
+                "properties": {"inference_enabled": {"const": true}}
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "inference_policy": {
+                "properties": {
+                  "enabled": {"const": true},
+                  "human_review_required": {"const": true}
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "evidence_policy": {
+                "properties": {
+                  "allowed_attribution_basis": {
+                    "contains": {"const": "model_inferred"}
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "inference_policy": {
+                "properties": {
+                  "enabled": {"const": true},
+                  "human_review_required": {"const": true}
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "extraction": {"$ref": "#/$defs/extractionPolicy"},
+    "retrieval": {
+      "type": "object",
+      "required": ["chunk_policy"],
+      "properties": {
+        "chunk_policy": {"$ref": "#/$defs/chunkPolicy"}
+      }
+    },
+    "limits": {"$ref": "#/$defs/limits"}
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "retrieval": {
+            "properties": {
+              "chunk_policy": {
+                "properties": {"include_inferred_content": {"const": true}}
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "compiler": {
+            "properties": {
+              "inference_policy": {
+                "properties": {
+                  "enabled": {"const": true},
+                  "human_review_required": {"const": true}
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "evidencePolicy": {
+      "type": "object",
+      "required": [
+        "mode",
+        "required_for",
+        "minimum_items_per_claim",
+        "require_selector",
+        "allowed_attribution_basis",
+        "unresolved_claim_policy",
+        "conflict_policy"
+      ],
+      "properties": {
+        "mode": {"const": "evidence_first"},
+        "required_for": {
+          "type": "array",
+          "minItems": 5,
+          "maxItems": 5,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "node_statements",
+              "facts",
+              "edges",
+              "spatial_contexts",
+              "derivations"
+            ]
+          }
+        },
+        "minimum_items_per_claim": {"type": "integer", "minimum": 1, "maximum": 100},
+        "require_selector": {"const": true},
+        "allowed_attribution_basis": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "source_explicit",
+              "parser_derived",
+              "model_inferred",
+              "human_added"
+            ]
+          }
+        },
+        "unresolved_claim_policy": {"enum": ["reject", "flag"]},
+        "conflict_policy": {"enum": ["preserve", "reject"]}
+      }
+    },
+    "inferencePolicy": {
+      "type": "object",
+      "required": [
+        "enabled",
+        "human_review_required",
+        "persist_chain_of_thought",
+        "allow_unattributed_claims"
+      ],
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "human_review_required": {"type": "boolean"},
+        "persist_chain_of_thought": {"const": false},
+        "allow_unattributed_claims": {"const": false}
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {"enabled": {"const": true}}
+          },
+          "then": {
+            "properties": {"human_review_required": {"const": true}}
+          }
+        }
+      ]
+    },
+    "spatialPolicy": {
+      "type": "object",
+      "required": [
+        "inference_enabled",
+        "require_evidence",
+        "human_review_required",
+        "unknown_scope_policy"
+      ],
+      "properties": {
+        "inference_enabled": {"type": "boolean"},
+        "require_evidence": {"const": true},
+        "human_review_required": {"type": "boolean"},
+        "unknown_scope_policy": {"enum": ["omit", "flag"]}
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {"inference_enabled": {"const": true}}
+          },
+          "then": {
+            "properties": {"human_review_required": {"const": true}}
+          }
+        }
+      ]
+    },
+    "graphPolicy": {
+      "type": "object",
+      "required": [
+        "allowed_edge_types",
+        "unknown_edge_policy",
+        "preserve_conflicts",
+        "monotonic_merge"
+      ],
+      "properties": {
+        "allowed_edge_types": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "uses",
+              "enables",
+              "based-on",
+              "part-of",
+              "tension",
+              "replaces",
+              "extends",
+              "example-of"
+            ]
+          }
+        },
+        "unknown_edge_policy": {"const": "reject"},
+        "preserve_conflicts": {"const": true},
+        "monotonic_merge": {"const": true}
+      }
+    },
+    "extractionPolicy": {
+      "type": "object",
+      "required": [
+        "allowed_source_types",
+        "network_access",
+        "execute_active_content",
+        "encoding_policy",
+        "unsupported_input_policy"
+      ],
+      "properties": {
+        "allowed_source_types": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"enum": ["txt", "md", "html", "csv", "tsv", "json", "docx"]}
+        },
+        "network_access": {"const": false},
+        "execute_active_content": {"const": false},
+        "encoding_policy": {"const": "utf-8-strict"},
+        "unsupported_input_policy": {"const": "reject"}
+      }
+    },
+    "chunkPolicy": {
+      "type": "object",
+      "required": [
+        "mode",
+        "include_evidence_excerpt",
+        "include_source_metadata",
+        "include_inferred_content",
+        "empty_evidence_policy",
+        "deduplicate_by",
+        "max_chunks_per_node"
+      ],
+      "properties": {
+        "mode": {"const": "evidence_first"},
+        "include_evidence_excerpt": {"const": true},
+        "include_source_metadata": {"const": true},
+        "include_inferred_content": {"type": "boolean"},
+        "empty_evidence_policy": {"enum": ["exclude", "flag"]},
+        "deduplicate_by": {
+          "type": "array",
+          "prefixItems": [
+            {"const": "source"},
+            {"const": "selector"},
+            {"const": "text_sha256"}
+          ],
+          "items": false,
+          "minItems": 3,
+          "maxItems": 3
+        },
+        "max_chunks_per_node": {"type": "integer", "minimum": 1, "maximum": 100}
+      }
+    },
+    "limits": {
+      "type": "object",
+      "required": [
+        "max_input_bytes",
+        "max_expanded_bytes",
+        "max_segments",
+        "max_segment_chars",
+        "max_nodes",
+        "max_edges",
+        "max_evidence_items",
+        "max_chunk_chars",
+        "max_output_bytes"
+      ],
+      "properties": {
+        "max_input_bytes": {"type": "integer", "minimum": 1, "maximum": 536870912},
+        "max_expanded_bytes": {"type": "integer", "minimum": 1, "maximum": 1073741824},
+        "max_segments": {"type": "integer", "minimum": 1, "maximum": 1000000},
+        "max_segment_chars": {"type": "integer", "minimum": 1, "maximum": 1000000},
+        "max_nodes": {"type": "integer", "minimum": 1, "maximum": 1000000},
+        "max_edges": {"type": "integer", "minimum": 1, "maximum": 10000000},
+        "max_evidence_items": {"type": "integer", "minimum": 1, "maximum": 10000000},
+        "max_chunk_chars": {"type": "integer", "minimum": 1, "maximum": 1000000},
+        "max_output_bytes": {"type": "integer", "minimum": 1, "maximum": 2147483648}
+      }
+    }
+  }
+}

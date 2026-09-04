@@ -1,0 +1,94 @@
+{
+  "$schema": "../schema/profile.schema.json",
+  "profile_version": "1.0",
+  "profile_id": "default",
+  "description": "Local evidence-first compilation with inference and spatial inference disabled.",
+  "compiler": {
+    "evidence_policy": {
+      "mode": "evidence_first",
+      "required_for": [
+        "node_statements",
+        "facts",
+        "edges",
+        "spatial_contexts",
+        "derivations"
+      ],
+      "minimum_items_per_claim": 1,
+      "require_selector": true,
+      "allowed_attribution_basis": [
+        "source_explicit",
+        "parser_derived"
+      ],
+      "unresolved_claim_policy": "reject",
+      "conflict_policy": "preserve"
+    },
+    "inference_policy": {
+      "enabled": false,
+      "human_review_required": true,
+      "persist_chain_of_thought": false,
+      "allow_unattributed_claims": false
+    },
+    "spatial_policy": {
+      "inference_enabled": false,
+      "require_evidence": true,
+      "human_review_required": true,
+      "unknown_scope_policy": "omit"
+    },
+    "graph_policy": {
+      "allowed_edge_types": [
+        "uses",
+        "enables",
+        "based-on",
+        "part-of",
+        "tension",
+        "replaces",
+        "extends",
+        "example-of"
+      ],
+      "unknown_edge_policy": "reject",
+      "preserve_conflicts": true,
+      "monotonic_merge": true
+    }
+  },
+  "extraction": {
+    "allowed_source_types": [
+      "txt",
+      "md",
+      "html",
+      "csv",
+      "tsv",
+      "json",
+      "docx"
+    ],
+    "network_access": false,
+    "execute_active_content": false,
+    "encoding_policy": "utf-8-strict",
+    "unsupported_input_policy": "reject"
+  },
+  "retrieval": {
+    "chunk_policy": {
+      "mode": "evidence_first",
+      "include_evidence_excerpt": true,
+      "include_source_metadata": true,
+      "include_inferred_content": false,
+      "empty_evidence_policy": "exclude",
+      "deduplicate_by": [
+        "source",
+        "selector",
+        "text_sha256"
+      ],
+      "max_chunks_per_node": 8
+    }
+  },
+  "limits": {
+    "max_input_bytes": 67108864,
+    "max_expanded_bytes": 67108864,
+    "max_segments": 10000,
+    "max_segment_chars": 16000,
+    "max_nodes": 10000,
+    "max_edges": 50000,
+    "max_evidence_items": 100000,
+    "max_chunk_chars": 4000,
+    "max_output_bytes": 268435456
+  }
+}

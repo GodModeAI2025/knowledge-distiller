@@ -3,9 +3,9 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <meta name="referrer" content="no-referrer">
   <title>Knowledge Graph</title>
-  <script src="https://unpkg.com/cytoscape@3/dist/cytoscape.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <style>
 /* Knowledge Distiller — viewer styles (inlined into the single output HTML) */
 
@@ -93,7 +93,7 @@ body {
 }
 
 .chip b { color: var(--ink); font-weight: 650; font-size: 13px; }
-.chip.quality b { color: var(--accent); }
+.chip.conformance b { color: var(--accent); }
 
 #search {
   flex: 0 0 auto;
@@ -126,6 +126,79 @@ body {
 #cy {
   position: absolute;
   inset: 0;
+}
+
+.graph-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+.graph-canvas:active { cursor: grabbing; }
+.graph-canvas:focus-visible { outline: 3px solid rgba(47, 111, 237, .35); outline-offset: -3px; }
+#kd-arrow path { fill: #9aa6b2; }
+
+.graph-edge {
+  stroke: #c2cad3;
+  opacity: .86;
+  transition: opacity .16s ease;
+  vector-effect: non-scaling-stroke;
+}
+.graph-edge.tension { stroke: #e15759; stroke-dasharray: 7 5; }
+.edge-label {
+  fill: #5a6672;
+  font-size: 9px;
+  text-anchor: middle;
+  paint-order: stroke;
+  stroke: #fff;
+  stroke-width: 4px;
+  stroke-linejoin: round;
+  pointer-events: none;
+  transition: opacity .16s ease;
+}
+
+.graph-node {
+  cursor: pointer;
+  opacity: 1;
+  transition: opacity .16s ease;
+  outline: none;
+}
+.graph-node .node-circle {
+  stroke: rgba(0, 0, 0, .2);
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+}
+.graph-node:hover .node-circle,
+.graph-node:focus-visible .node-circle { stroke: #2f6fed; stroke-width: 3; }
+.graph-node.is-selected .node-circle { stroke: #2f6fed; stroke-width: 4; }
+.graph-node.superseded { opacity: .55; }
+.graph-node.superseded .node-circle { fill: #c2c9d1; stroke-dasharray: 5 3; }
+.graph-node.dragging { cursor: grabbing; }
+.node-label {
+  fill: #15202b;
+  font-size: 11px;
+  font-weight: 550;
+  text-anchor: middle;
+  dominant-baseline: central;
+  paint-order: stroke;
+  stroke: #fff;
+  stroke-width: 3.5px;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+.graph-node.is-hidden,
+.graph-edge.is-hidden,
+.edge-label.is-hidden { display: none; }
+.graph-node.is-dim,
+.graph-edge.is-dim,
+.edge-label.is-dim { opacity: .12; }
+.graph-empty {
+  fill: var(--muted);
+  font-size: 15px;
+  text-anchor: middle;
 }
 
 .load-error {
@@ -170,8 +243,14 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
+  width: 100%;
   padding: 3px 5px;
+  border: 0;
   border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
   cursor: pointer;
   user-select: none;
 }
@@ -255,6 +334,15 @@ body {
 .detail-md ul { margin: 4px 0; padding-left: 20px; }
 .detail-md li { margin: 3px 0; }
 .detail-md code { background: var(--chip-bg); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+.detail-md a { color: var(--accent); text-decoration: none; }
+.detail-md a:hover { text-decoration: underline; }
+.detail-md h3, .detail-md h4 { margin: 10px 0 4px; font-size: 14px; }
+.detail-md blockquote {
+  margin: 6px 0;
+  padding: 4px 10px;
+  border-left: 3px solid var(--line);
+  color: var(--muted);
+}
 
 .cite-list, .link-list { list-style: none; margin: 4px 0; padding: 0; }
 .cite-list li { margin: 5px 0; font-size: 12.5px; color: var(--muted); }
@@ -267,6 +355,13 @@ body {
   color: var(--accent);
   cursor: pointer;
   text-decoration: none;
+}
+.node-link {
+  appearance: none;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  font: inherit;
 }
 .link-list a:hover, .node-link:hover { text-decoration: underline; }
 .edge-type {
@@ -298,7 +393,7 @@ body {
   letter-spacing: .05em;
   color: var(--muted);
 }
-.facts-table td .v { font-weight: 600; }
+.facts-table td.v { font-weight: 600; }
 
 .oq-list { margin: 4px 0; padding-left: 18px; font-size: 13px; }
 .oq-list li { margin: 6px 0; }
@@ -327,487 +422,964 @@ body {
     </aside>
   </div>
 
-  <script>const GRAPH = {"@context": {"@vocab": "https://schema.org/", "kd": "https://knowledge-distiller.dev/v4/", "nodes": "kd:nodes", "edges": "kd:edges", "chunks": "kd:chunks", "confidence": "kd:confidence", "temporal": "kd:temporal", "cluster": "kd:cluster", "weight": "kd:weight", "sources": "kd:sources", "citations": "kd:citations", "resource": "schema:url"}, "metadata": {"title": "Complete Guide to Building Skills for Claude — Knowledge Distillation", "distiller_version": "4.0", "distiller_spec_version": "1.0", "sources": [{"id": "s1", "file": "building-skills-for-claude.pdf", "type": "pdf", "date": "2026-01", "url": null}], "distillation_date": "2026-06-26", "domain": "AI / LLM Customization / Prompt Engineering", "language": "en", "depth": "deep", "mode": "fresh", "quality_score": 100, "temporal_confidence": "inferred", "concept_count": 13, "relationship_count": 15, "cluster_count": 7, "fact_count": 13}, "clusters": [{"id": "skill-anatomy", "label": "Skill Anatomy", "description": "What a skill is and how it is structured technically", "concepts": ["skill", "yaml-frontmatter"]}, {"id": "design-principles", "label": "Design Principles", "description": "Core design philosophy governing how skills should be built", "concepts": ["progressive-disclosure", "mcp", "skill-description-field"]}, {"id": "planning-use-cases", "label": "Planning & Use Cases", "description": "How to identify and define what a skill should do", "concepts": ["skill-use-case-categories", "use-case-definition"]}, {"id": "testing-iteration", "label": "Testing & Iteration", "description": "How to validate, debug, and improve skills over time", "concepts": ["testing-strategy", "skill-iteration"]}, {"id": "distribution", "label": "Distribution", "description": "How skills are shared, installed, and used programmatically", "concepts": ["distribution-model", "open-standard-skills-api"]}, {"id": "workflow-patterns", "label": "Workflow Patterns", "description": "Proven structural patterns for skill instructions", "concepts": ["workflow-patterns"]}, {"id": "troubleshooting", "label": "Troubleshooting", "description": "Common failure modes and their solutions", "concepts": ["troubleshooting-reference"]}], "nodes": [{"id": "skill", "label": "Skill", "cluster": "skill-anatomy", "confidence": "high", "definition": "A skill is a folder-based instruction package that teaches Claude how to handle specific tasks or workflows. It consists of a required SKILL.md file (Markdown with YAML frontmatter) and optional subdirectories: scripts/ (executable code), references/ (documentation), and assets/ (templates, fonts, icons).", "relevance": "Skills eliminate the need to re-explain preferences and workflows in every conversation. They encode repeatable processes once, making Claude's behavior consistent and automating multi-step workflows. For MCP builders, skills add the knowledge layer on top of raw tool access.", "resource": null, "statements": ["A skill must contain exactly one SKILL.md file (case-sensitive); the folder name must be kebab-case. [1]", "Skills work identically across Claude.ai, Claude Code, and the API without modification.", "Claude can load multiple skills simultaneously; each skill must work alongside others.", "Skills are most powerful for repeatable workflows: document generation, consistent research methodology, multi-step process orchestration.", "A first working skill can be built and tested in 15-30 minutes using the skill-creator skill."], "temporal": {"source_date": "2026-01", "source_period": null, "valid_from": "2025", "valid_until": null, "temporal_confidence": "inferred"}, "sources": ["s1"], "citations": [{"n": 1, "source": "s1", "locator": null, "label": "Building Skills for Claude — Complete Guide", "url": null}], "note": "The guide uses a kitchen analogy: MCP is the professional kitchen (tools and ingredients); skills are the recipes (how to use them). This cleanly separates connectivity concerns from workflow knowledge."}, {"id": "yaml-frontmatter", "label": "YAML Frontmatter", "cluster": "skill-anatomy", "confidence": "high", "definition": "The YAML frontmatter block (delimited by ---) at the top of SKILL.md is the metadata section that Claude reads to decide whether to load the skill. It is the first level of the progressive disclosure system, always loaded into the system prompt even before the full skill body.", "relevance": "The frontmatter is the most critical part of a skill. A poorly written description causes under-triggering (skill never loads) or over-triggering (skill loads for unrelated tasks). The description field is the primary trigger mechanism.", "resource": null, "statements": ["Only two fields are required: name (kebab-case) and description (what it does + when to use it, under 1024 characters, no XML angle brackets). [1]", "description MUST include both what the skill does and trigger conditions with specific phrases users would say.", "Optional fields: license, allowed-tools, compatibility (1-500 chars), metadata (author, version, mcp-server, category, tags).", "Forbidden in frontmatter: XML angle brackets < > and skill names containing 'claude' or 'anthropic' (reserved namespace).", "Debugging: Ask Claude 'When would you use the [skill name] skill?' to surface what is triggering or not triggering it."], "temporal": {"source_date": "2026-01", "source_period": null, "valid_from": "2025", "valid_until": null, "temporal_confidence": "inferred"}, "sources": ["s1"], "citations": [{"n": 1, "source": "s1", "locator": null, "label": "Building Skills for Claude — Complete Guide", "url": null}]}, {"id": "progressive-disclosure", "label": "Progressive Disclosure", "cluster": "design-principles", "confidence": "high", "definition": "A three-level loading system that minimizes token consumption while preserving specialized expertise. Level 1 (YAML frontmatter) is always loaded. Level 2 (SKILL.md body) loads when Claude judges the skill relevant. Level 3 (linked files in references/) loads only when specifically needed within a task.", "relevance": "Without progressive disclosure, having many skills enabled would flood the system prompt with irrelevant instructions, degrading performance. This system allows 20-50 skills to coexist without interference.", "resource": null, "statements": ["Keep SKILL.md under 5,000 words; move detailed documentation to references/. [1]", "The practical limit before context degradation is 20-50 simultaneously enabled skills.", "References/ files are Claude-navigable: Claude discovers and loads them only as needed.", "Critical instructions should appear at the top of SKILL.md, not buried in later sections."], "temporal": {"source_date": "2026-01", "source_period": null, "valid_from": "2025", "valid_until": null, "temporal_confidence": "inferred"}, "sources": ["s1"], "citations": [{"n": 1, "source": "s1", "locator": null, "label": "Building Skills for Claude — Complete Guide", "url": null}]}, {"id": "mcp", "label": "MCP (Model Context Protocol)", "cluster": "design-principles", "confidence": "high", "definition": "The Model Context Protocol (MCP) is a connectivity layer that gives Claude access to external services and tools (Notion, Asana, Linear, etc.) and provides real-time data access and tool invocation. In the skills ecosystem, MCP answers 'what Claude can do' while skills answer 'how Claude should do it'.", "relevance": "For skill builders working with MCP integrations, skills serve as the knowledge and workflow layer on top of raw MCP tool access. Without skills, MCP users face a blank slate — they have tool access but no workflow guidance.", "resource": "https://modelcontextprotocol.io", "statements": ["MCP provides connectivity; skills provide the workflow knowledge and best practices on top. [1]", "Without skills, MCP users face each conversation from scratch, inconsistent results, and support requests about how to use the integration.", "With skills, pre-built workflows activate automatically, best practices are embedded in every interaction, and the learning curve is reduced.", "Skills for MCP (Category 3) coordinate multiple MCP calls in sequence and embed domain expertise.", "MCP connection issues should be tested independently from the skill — call an MCP tool directly without the skill to isolate whether the failure is in MCP or the skill."], "temporal": {"source_date": "2026-01", "source_period": null, "valid_from": "2025", "valid_until": null, "temporal_confidence": "inferred"}, "sources": ["s1"], "citations": [{"n": 1, "source": "s1", "locator": null, "label": "Building Skills for Claude — Complete Guide", "url": null}]}, {"id": "skill-use-case-categories", "label": "Skill Use Case Categories", "cluster": "planning-use-cases", "confidence": "high", "definition": "Anthropic has identified three canonical skill use case categories based on patterns observed across early adopters and internal teams: (1) Document and Asset Creation, (2) Workflow Automation, and (3) MCP Enhancement.", "relevance": "Knowing which category a skill belongs to determines the right design patterns, technical approach, and test strategy. Categories are not mutually exclusive but most skills lean toward one.", "resource": null, "statements": ["Category 1 — Document and Asset Creation: embedded style guides and templates, quality checklists, no external tools required. Real example: frontend-design skill. [1]", "Category 2 — Workflow Automation: step-by-step workflows with validation gates, iterative refinement loops, built-in review suggestions. Real example: skill-creator skill.", "Category 3 — MCP Enhancement: coordinates multiple MCP calls in sequence, embeds domain expertise, handles common MCP errors. Real example: sentry-code-review skill from Sentry.", "Problem-first framing: user describes outcome, skill orchestrates tools. Tool-first framing: user has tool access, skill provides workflow expertise.", "Most skills lean one direction; knowing which framing fits the use case helps choose the right workflow pattern."], "temporal": {"source_date": "2026-01", "source_period": null, "valid_from": "2025", "valid_until": null, "temporal_confidence": "inferred"}, "sources": ["s1"], "citations": [{"n": 1, "source": "s1", "locator": null, "label": "Building Skills for Claude — Complete Guide", "url": null}]}, {"id": "use-case-definition", "label": "Use Case Definition & Success Criteria", "cluster": "planning-use-cases", "confidence": "high", "definition": "Before writing any skill instructions, identify 2-3 concrete use cases. A good use case definition specifies: trigger phrase, ordered steps, tools required, and expected result. Success criteria are defined both quantitatively (trigger rate, tool call count, API error rate) and qualitatively (user autonomy, output consistency).", "relevance": "Skills without defined use cases tend to be vague, triggering incorrectly or failing to complete workflows. Success criteria create measurable targets and a feedback loop for iteration.", "resource": null, "statements": ["Quantitative targets: 90% trigger rate on relevant queries; zero failed API calls per workflow; measurable token reduction vs. baseline. [1]", "Qualitative targets: users never need to prompt next steps; workflows complete without user correction; consistent results across sessions.", "Performance comparison benchmark: without skill = 15 messages, 3 failed API calls, 12,000 tokens; with skill = 2 questions, 0 failures, 6,000 tokens.", "Success measurement is partly vibes-based — Anthropic acknowledges active development of more robust tooling.", "Use case definition should answer: what does a user want to accomplish, what multi-step workflows are required, which tools are needed, what domain knowledge should be embedded."], "temporal": {"source_date": "2026-01", "source_period": null, "valid_from": "2025", "valid_until": null, "temporal_confidence": "inferred"}, "sources": ["s1"], "citations": [{"n": 1, "source": "s1", "locator": null, "label": "Building Skills for Claude — Complete Guide", "url": null}]}, {"id": "skill-description-field", "label": "Skill Description Field", "cluster": "design-principles", "confidence": "high", "definition": "The description field in YAML frontmatter is the primary mechanism by which Claude decides whether to activate a skill. It must follow the structure: [What it does] + [When to use it] + [Key capabilities]. It must include natural-language trigger phrases that real users would say.", "relevance": "This single field determines whether a skill is effective in practice. Vague descriptions lead to under-triggering; overly broad descriptions cause over-triggering.", "resource": null, "statements": ["Good description: specific, includes trigger phrases users say, mentions file types if relevant, under 1024 characters. [1]", "Bad description examples: 'Helps with projects' (too vague), 'Creates sophisticated multi-page documentation systems' (missing triggers), 'Implements the Project entity model' (too technical).", "Add negative triggers to prevent over-triggering: 'Do NOT use for simple data exploration (use data-viz skill instead).'", "For under-triggering: add more detail and domain-specific keywords. For over-triggering: add negative triggers and scope constraints.", "The description field appears in Claude's system prompt as the first level of progressive disclosure."], "temporal": {"source_date": "2026-01", "source_period": null, "valid_from": "2025", "valid_until": null, "temporal_confidence": "inferred"}, "sources": ["s1"], "citations": [{"n": 1, "source": "s1", "locator": null, "label": "Building Skills for Claude — Complete Guide", "url": null}]}, {"id": "testing-strategy", "label": "Testing Strategy", "cluster": "testing-iteration", "confidence": "high", "definition": "Skills should be tested at three increasing levels of rigor: (1) manual testing in Claude.ai for fast iteration, (2) scripted testing in Claude Code for repeatable validation, and (3) programmatic testing via the Skills API for systematic evaluation suites. Effective testing covers three areas: triggering tests, functional tests, and performance comparison.", "relevance": "Skills are living documents that degrade or drift without testing. The recommended approach of iterating on one challenging task until it works before broadening coverage provides faster signal.", "resource": null, "statements": ["Triggering tests: verify the skill loads on obvious tasks, paraphrased requests, and does NOT load on unrelated queries. Run 10-20 test queries. [1]", "Functional tests: verify correct outputs, successful API calls, error handling, and edge case coverage.", "Performance comparison: count messages, failed API calls, and tokens consumed with vs. without the skill enabled.", "The skill-creator skill helps design and refine skills but does NOT run automated test suites or produce quantitative evaluation results.", "Pro tip: iterate on a single challenging task to success before expanding to coverage testing — this leverages Claude's in-context learning."], "temporal": {"source_date": "2026-01", "source_period": null, "valid_from": "2025", "valid_until": null, "temporal_confidence": "inferred"}, "sources": ["s1"], "citations": [{"n": 1, "source": "s1", "locator": null, "label": "Building Skills for Claude — Complete Guide", "url": null}]}, {"id": "skill-iteration", "label": "Skill Iteration", "cluster": "testing-iteration", "confidence": "high", "definition": "Skills are living documents that should be iteratively improved based on operational signals. Three failure modes each have distinct solutions: under-triggering, over-triggering, and execution issues.", "relevance": "A skill that worked at launch may degrade as users discover edge cases. Iteration based on clear diagnostic signals prevents skill abandonment.", "resource": null, "statements": ["Under-triggering signals: skill doesn't load automatically, users manually enabling it, support questions about when to use it. Solution: enrich description with more keywords. [1]", "Over-triggering signals: skill loads for irrelevant queries, users disabling it, confusion about purpose. Solution: add negative triggers, be more specific about scope.", "Execution issues: inconsistent results, API failures, user corrections needed. Solution: improve instructions, add error handling.", "Advanced technique: for critical validations, use a bundled script rather than language instructions — code is deterministic, language interpretation is not."], "temporal": {"source_date": "2026-01", "source_period": null, "valid_from": "2025", "valid_until": null, "temporal_confidence": "inferred"}, "sources": ["s1"], "citations": [{"n": 1, "source": "s1", "locator": null, "label": "Building Skills for Claude — Complete Guide", "url": null}]}, {"id": "distribution-model", "label": "Distribution Model", "cluster": "distribution", "confidence": "high", "definition": "As of January 2026, skills are distributed by downloading and zipping a skill folder, then uploading to Claude.ai via Settings > Capabilities > Skills, or placing in the Claude Code skills directory. Organization-level deployment (shipped December 18, 2025) allows admins to deploy skills workspace-wide with automatic updates and centralized management.", "relevance": "Understanding the distribution model is necessary for both individual use and enterprise rollout. The API path enables production deployments and automated pipelines.", "resource": null, "statements": ["Individual installation: Download folder, zip, upload to Claude.ai, or place in Claude Code skills directory. [1]", "Organization deployment (since December 18, 2025): admins deploy workspace-wide with automatic updates.", "Recommended distribution: host on GitHub (public repo + clear README for humans), document in MCP repo, create installation guide.", "Skills should be positioned by outcomes, not technical details: focus on what users can accomplish, not on the folder structure.", "Note: the skill folder itself should NOT contain a README.md; the repo-level README is for human visitors only."], "temporal": {"source_date": "2026-01", "source_period": null, "valid_from": "2025-12-18", "valid_until": null, "temporal_confidence": "explicit"}, "sources": ["s1"], "citations": [{"n": 1, "source": "s1", "locator": null, "label": "Building Skills for Claude — Complete Guide", "url": null}]}, {"id": "open-standard-skills-api", "label": "Open Standard & Skills API", "cluster": "distribution", "confidence": "high", "definition": "Anthropic has published Agent Skills as an open standard with the aspiration that skills should be portable across AI platforms (analogous to MCP). The Skills API provides programmatic control via /v1/skills endpoint, container.skills parameter in Messages API, version control through Claude Console, and integration with the Claude Agent SDK.", "relevance": "The open standard signals Anthropic's intent for skills to be an ecosystem-level primitive. The API path unlocks production-scale deployment and agent-system integration beyond Claude.ai.", "resource": null, "statements": ["API use cases: applications using skills programmatically, production deployments at scale, automated pipelines and agent systems. Requires Code Execution Tool beta. [1]", "Claude.ai / Claude Code use cases: end users interacting directly, manual testing during development, individual ad-hoc workflows.", "Skills can note platform-specific capabilities in the compatibility field.", "Like MCP, the goal is for skills to be portable — the same skill should work whether using Claude or other AI platforms.", "Public reference: GitHub anthropics/skills repository contains Anthropic-created skills available for customization."], "temporal": {"source_date": "2026-01", "source_period": null, "valid_from": "2026-01", "valid_until": null, "temporal_confidence": "inferred"}, "sources": ["s1"], "citations": [{"n": 1, "source": "s1", "locator": null, "label": "Building Skills for Claude — Complete Guide", "url": null}]}, {"id": "workflow-patterns", "label": "Workflow Patterns", "cluster": "workflow-patterns", "confidence": "high", "definition": "Five recurring structural patterns for skill instructions, distilled from early adopters and internal teams: (1) Sequential Workflow Orchestration, (2) Multi-MCP Coordination, (3) Iterative Refinement, (4) Context-Aware Tool Selection, (5) Domain-Specific Intelligence. These are heuristics, not prescriptive templates.", "relevance": "Choosing the wrong pattern leads to brittle or incomplete skills. Each pattern targets a specific class of workflow complexity.", "resource": null, "statements": ["Pattern 1 — Sequential Workflow Orchestration: multi-step processes in a specific order. Key: explicit step ordering, dependencies, validation gates, rollback instructions. [1]", "Pattern 2 — Multi-MCP Coordination: workflows spanning multiple services (e.g., Figma to Drive to Linear to Slack). Key: clear phase separation, data passing between MCPs, centralized error handling.", "Pattern 3 — Iterative Refinement: quality improves with iteration loops (initial draft, quality check, refinement, finalization). Key: explicit quality criteria, validation scripts, termination condition.", "Pattern 4 — Context-Aware Tool Selection: same outcome, different tools depending on context (e.g., file size determines cloud vs. local storage). Key: decision tree, fallback options, transparency.", "Pattern 5 — Domain-Specific Intelligence: skill adds specialized knowledge beyond tool access (e.g., compliance rules, brand standards). Key: domain expertise embedded in logic, compliance-before-action ordering, audit trail."], "temporal": {"source_date": "2026-01", "source_period": null, "valid_from": "2025", "valid_until": null, "temporal_confidence": "inferred"}, "sources": ["s1"], "citations": [{"n": 1, "source": "s1", "locator": null, "label": "Building Skills for Claude — Complete Guide", "url": null}], "note": "The Home Depot framing: problem-first means user describes outcome and skill orchestrates tools; tool-first means user has tool access and skill provides workflow expertise. Most skills lean one direction."}, {"id": "troubleshooting-reference", "label": "Troubleshooting Reference", "cluster": "troubleshooting", "confidence": "high", "definition": "A structured catalog of common skill failures mapped to causes and solutions. Covers upload errors, triggering issues, MCP connection failures, instruction non-compliance, and context/performance degradation.", "relevance": "Skill failures are often silent (no error, just wrong behavior). Knowing the failure taxonomy enables faster diagnosis without trial-and-error.", "resource": null, "statements": ["Upload errors: SKILL.md must be exactly this spelling (case-sensitive); YAML must have --- delimiters; name must be kebab-case; no XML angle brackets. [1]", "Skill does not trigger: description too generic, missing trigger phrases. Fix by asking Claude 'When would you use [skill name]?' and revising.", "Skill triggers too often: add negative triggers, be more specific, clarify scope explicitly.", "MCP connection issues: verify server connected, check auth tokens, test MCP independently without the skill, verify tool names are case-sensitive.", "Instructions not followed: keep concise, put critical instructions at top with Critical headers, use deterministic language, add performance notes in user prompts rather than SKILL.md.", "Large context / performance degradation: keep SKILL.md under 5,000 words, limit simultaneous skills to 20-50, use progressive disclosure."], "temporal": {"source_date": "2026-01", "source_period": null, "valid_from": "2025", "valid_until": null, "temporal_confidence": "inferred"}, "sources": ["s1"], "citations": [{"n": 1, "source": "s1", "locator": null, "label": "Building Skills for Claude — Complete Guide", "url": null}]}], "edges": [{"source": "skill", "target": "yaml-frontmatter", "type": "uses", "label": "A skill uses YAML frontmatter as its primary metadata and trigger mechanism", "weight": 1.0, "confidence": "high", "id": "skill__uses__yaml-frontmatter"}, {"source": "skill", "target": "progressive-disclosure", "type": "enables", "label": "The skill folder structure enables three-level progressive disclosure", "weight": 1.0, "confidence": "high", "id": "skill__enables__progressive-disclosure"}, {"source": "yaml-frontmatter", "target": "skill-description-field", "type": "part-of", "label": "The description field is the most important part of YAML frontmatter", "weight": 1.0, "confidence": "high", "id": "yaml-frontmatter__part-of__skill-description-field"}, {"source": "skill-description-field", "target": "testing-strategy", "type": "enables", "label": "The description field is what triggering tests validate", "weight": 0.8, "confidence": "high", "id": "skill-description-field__enables__testing-strategy"}, {"source": "mcp", "target": "skill", "type": "extends", "label": "Skills extend MCP by adding the workflow knowledge layer on top of connectivity", "weight": 1.0, "confidence": "high", "id": "mcp__extends__skill"}, {"source": "skill-use-case-categories", "target": "use-case-definition", "type": "based-on", "label": "Use case categories provide the framework for concrete use case definition", "weight": 0.8, "confidence": "high", "id": "skill-use-case-categories__based-on__use-case-definition"}, {"source": "use-case-definition", "target": "skill-description-field", "type": "enables", "label": "A well-defined use case directly informs the description field content", "weight": 0.9, "confidence": "high", "id": "use-case-definition__enables__skill-description-field"}, {"source": "testing-strategy", "target": "skill-iteration", "type": "enables", "label": "Testing surfaces the signals needed for iteration", "weight": 1.0, "confidence": "high", "id": "testing-strategy__enables__skill-iteration"}, {"source": "skill-iteration", "target": "skill-description-field", "type": "extends", "label": "Iteration typically requires refining the description field", "weight": 0.9, "confidence": "high", "id": "skill-iteration__extends__skill-description-field"}, {"source": "distribution-model", "target": "open-standard-skills-api", "type": "extends", "label": "The API extends the manual distribution model for programmatic use", "weight": 0.8, "confidence": "high", "id": "distribution-model__extends__open-standard-skills-api"}, {"source": "workflow-patterns", "target": "mcp", "type": "uses", "label": "Most workflow patterns orchestrate MCP tool calls", "weight": 0.9, "confidence": "high", "id": "workflow-patterns__uses__mcp"}, {"source": "troubleshooting-reference", "target": "skill-iteration", "type": "extends", "label": "Troubleshooting is the diagnostic phase of the iteration cycle", "weight": 0.8, "confidence": "high", "id": "troubleshooting-reference__extends__skill-iteration"}, {"source": "progressive-disclosure", "target": "yaml-frontmatter", "type": "based-on", "label": "Level 1 of progressive disclosure is the YAML frontmatter", "weight": 1.0, "confidence": "high", "id": "progressive-disclosure__based-on__yaml-frontmatter"}, {"source": "skill-use-case-categories", "target": "workflow-patterns", "type": "enables", "label": "The use case category determines which workflow pattern to apply", "weight": 0.8, "confidence": "medium", "id": "skill-use-case-categories__enables__workflow-patterns"}, {"source": "open-standard-skills-api", "target": "mcp", "type": "based-on", "label": "Agent Skills open standard is designed analogously to MCP as a cross-platform primitive", "weight": 0.7, "confidence": "medium", "id": "open-standard-skills-api__based-on__mcp"}], "facts": [{"id": "f1", "statement": "Skill build time for first skill", "value": "15-30 minutes", "temporal": {"source_date": null, "source_period": null, "valid_from": "2026-01", "valid_until": null, "temporal_confidence": "inferred"}, "confidence": "medium", "source": "s1", "context": "Using the skill-creator skill for an initial working skill"}, {"id": "f2", "statement": "Description field maximum length", "value": "1024 characters", "temporal": {"source_date": null, "source_period": null, "valid_from": "2026-01", "valid_until": null, "temporal_confidence": "inferred"}, "confidence": "high", "source": "s1", "context": "YAML frontmatter description field constraint"}, {"id": "f3", "statement": "compatibility field maximum length", "value": "500 characters", "temporal": {"source_date": null, "source_period": null, "valid_from": "2026-01", "valid_until": null, "temporal_confidence": "inferred"}, "confidence": "high", "source": "s1", "context": "YAML frontmatter optional compatibility field"}, {"id": "f4", "statement": "SKILL.md recommended maximum size", "value": "5,000 words", "temporal": {"source_date": null, "source_period": null, "valid_from": "2026-01", "valid_until": null, "temporal_confidence": "inferred"}, "confidence": "medium", "source": "s1", "context": "Above this limit, context performance degrades; move detailed docs to references/"}, {"id": "f5", "statement": "Simultaneous skills practical limit", "value": "20-50 skills", "temporal": {"source_date": null, "source_period": null, "valid_from": "2026-01", "valid_until": null, "temporal_confidence": "inferred"}, "confidence": "medium", "source": "s1", "context": "Beyond this, context performance degrades; use selective enablement"}, {"id": "f6", "statement": "Organization-level skills feature shipped", "value": "December 18, 2025", "temporal": {"source_date": null, "source_period": null, "valid_from": "2025-12-18", "valid_until": null, "temporal_confidence": "explicit"}, "confidence": "high", "source": "s1", "context": "Workspace-wide admin deployment with automatic updates"}, {"id": "f7", "statement": "Token consumption with skill (illustrative example)", "value": "6,000 tokens (vs. 12,000 without skill)", "temporal": {"source_date": null, "source_period": null, "valid_from": "2026-01", "valid_until": null, "temporal_confidence": "inferred"}, "confidence": "low", "source": "s1", "context": "Performance comparison example in guide; 50% reduction"}, {"id": "f8", "statement": "Message count with skill (illustrative example)", "value": "2 messages (vs. 15 without skill)", "temporal": {"source_date": null, "source_period": null, "valid_from": "2026-01", "valid_until": null, "temporal_confidence": "inferred"}, "confidence": "low", "source": "s1", "context": "Performance comparison example in guide; 87% reduction"}, {"id": "f9", "statement": "Skill triggering aspirational target", "value": "90% on relevant queries", "temporal": {"source_date": null, "source_period": null, "valid_from": "2026-01", "valid_until": null, "temporal_confidence": "inferred"}, "confidence": "medium", "source": "s1", "context": "Aspirational benchmark, not a precise threshold; Anthropic developing better measurement tooling"}, {"id": "f10", "statement": "Skills API endpoint", "value": "/v1/skills", "temporal": {"source_date": null, "source_period": null, "valid_from": "2026-01", "valid_until": null, "temporal_confidence": "inferred"}, "confidence": "high", "source": "s1", "context": "For listing and managing skills programmatically; requires Code Execution Tool beta"}, {"id": "f11", "statement": "API parameter for adding skills to requests", "value": "container.skills", "temporal": {"source_date": null, "source_period": null, "valid_from": "2026-01", "valid_until": null, "temporal_confidence": "inferred"}, "confidence": "high", "source": "s1", "context": "Used in Messages API requests to include skills"}, {"id": "f12", "statement": "Public skills repository", "value": "github.com/anthropics/skills", "temporal": {"source_date": null, "source_period": null, "valid_from": "2026-01", "valid_until": null, "temporal_confidence": "inferred"}, "confidence": "high", "source": "s1", "context": "Anthropic-created reference skills available for customization"}, {"id": "f13", "statement": "Partner skills directory examples", "value": "Asana, Atlassian, Canva, Figma, Sentry, Zapier", "temporal": {"source_date": null, "source_period": null, "valid_from": "2026-01", "valid_until": null, "temporal_confidence": "inferred"}, "confidence": "high", "source": "s1", "context": "Partners with skills in the directory as of guide publication"}], "chunks": [{"id": "skill", "text": "As of early 2026: A skill is a folder-based instruction package that teaches Claude how to handle specific tasks or workflows. It consists of a required SKILL.md file with YAML frontmatter, and optional subdirectories for scripts (executable code), references (documentation), and assets (templates, fonts, icons). Skills eliminate the need to re-explain preferences and workflows in every conversation by encoding repeatable processes once, making Claude's behavior consistent and automating multi-step workflows. For MCP builders, skills add the knowledge layer on top of raw tool access. A skill must contain exactly one SKILL.md file (case-sensitive) and the folder name must be in kebab-case. Skills work identically across Claude.ai, Claude Code, and the API without modification. Claude can load multiple skills simultaneously, so each skill must work alongside others. Skills are most powerful for repeatable workflows such as document generation, consistent research methodology, and multi-step process orchestration. A first working skill can be built and tested in 15 to 30 minutes using the skill-creator skill. The guide uses a kitchen analogy: MCP is the professional kitchen providing tools and ingredients, while skills are the recipes describing how to use them.", "concepts": ["skill"], "temporal_scope": "2026", "token_estimate": 319}, {"id": "yaml-frontmatter", "text": "As of early 2026: The YAML frontmatter block delimited by triple dashes at the top of SKILL.md is the metadata section that Claude reads to decide whether to load the skill. It is always loaded into the system prompt as the first level of progressive disclosure. Only two fields are required: name in kebab-case matching the folder name, and description under 1024 characters with no XML angle brackets. The description must include both what the skill does and specific trigger conditions with phrases users would actually say. Optional fields include license, allowed-tools, compatibility for environment requirements, and metadata fields for author, version, MCP server name, category, and tags. Forbidden content includes XML angle brackets and skill names containing claude or anthropic, which are reserved to prevent prompt injection. A useful debugging technique is to ask Claude when it would use a given skill name, which causes Claude to quote back the description and reveal what is or is not triggering the skill.", "concepts": ["yaml-frontmatter"], "temporal_scope": "2026", "token_estimate": 256}, {"id": "progressive-disclosure", "text": "As of early 2026, and representing a timeless architectural principle: Progressive disclosure is a three-level loading system that minimizes token consumption while preserving specialized expertise. Level one is the YAML frontmatter, which is always loaded into the system prompt. Level two is the SKILL.md body, which loads when Claude judges the skill relevant to the current task. Level three consists of linked files in the references subdirectory, which Claude loads only when specifically needed within a task. Without progressive disclosure, having many skills enabled would flood the system prompt with irrelevant instructions and degrade performance. The system allows 20 to 50 skills to coexist without interference. SKILL.md should be kept under 5,000 words, with detailed documentation moved to references. Critical instructions should appear at the top of SKILL.md, not buried in later sections.", "concepts": ["progressive-disclosure"], "temporal_scope": "2026", "token_estimate": 227}, {"id": "mcp", "text": "As of early 2026: The Model Context Protocol (MCP) is a connectivity layer that gives Claude access to external services and tools such as Notion, Asana, and Linear, providing real-time data access and tool invocation. In the skills ecosystem, MCP answers what Claude can do while skills answer how Claude should do it. Without skills, MCP users face each conversation from scratch with inconsistent results and a steep learning curve. With skills, pre-built workflows activate automatically and best practices are embedded in every interaction. Skills for MCP integrations (Category 3) coordinate multiple MCP calls in sequence and embed domain expertise. When troubleshooting, MCP connection issues should be tested independently from the skill by calling an MCP tool directly without the skill to isolate whether a failure is in MCP or in the skill instructions.", "concepts": ["mcp"], "temporal_scope": "2026", "token_estimate": 216}, {"id": "skill-use-case-categories", "text": "As of early 2026: Anthropic has identified three canonical skill use case categories based on patterns observed across early adopters and internal teams. Category 1 is Document and Asset Creation, used for producing consistent high-quality output including documents, presentations, apps, and designs. It relies on embedded style guides, templates, and quality checklists without requiring external tools. A real example is the frontend-design skill. Category 2 is Workflow Automation, used for multi-step processes benefiting from consistent methodology and coordination across multiple MCP servers. It uses step-by-step workflows with validation gates and iterative refinement. A real example is the skill-creator skill. Category 3 is MCP Enhancement, used for workflow guidance layered on top of MCP tool access. It coordinates multiple MCP calls in sequence and embeds domain expertise. A real example is the sentry-code-review skill from Sentry. Most skills lean toward either a problem-first framing (user describes an outcome and the skill orchestrates tools) or a tool-first framing (user has tool access and the skill provides workflow expertise).", "concepts": ["skill-use-case-categories"], "temporal_scope": "2026", "token_estimate": 289}, {"id": "use-case-definition", "text": "As of early 2026: Before writing any skill instructions, it is important to identify 2 to 3 concrete use cases. A good use case definition specifies the trigger phrase, ordered steps, required tools, and expected result. Success criteria are defined both quantitatively and qualitatively. Quantitative targets include a 90% trigger rate on relevant queries, zero failed API calls per workflow, and a measurable token reduction versus a baseline. Qualitative targets include users never needing to prompt next steps, workflows completing without user correction, and consistent results across sessions. A benchmark in the guide shows that without a skill a task may require 15 back-and-forth messages, 3 failed API calls, and 12,000 tokens, while with a skill the same task requires only 2 clarifying questions, zero failures, and 6,000 tokens. Anthropic acknowledges that success measurement is partly vibes-based and that more robust tooling is under development.", "concepts": ["use-case-definition"], "temporal_scope": "2026", "token_estimate": 241}, {"id": "skill-description-field", "text": "As of early 2026: The description field in YAML frontmatter is the primary mechanism by which Claude decides whether to activate a skill. It must follow the structure of what the skill does, followed by when to use it, followed by key capabilities. It must include natural-language trigger phrases that real users would say. A good description is specific, includes trigger phrases, mentions relevant file types, and stays under 1024 characters. A bad description is too vague such as 'Helps with projects', missing triggers such as 'Creates sophisticated multi-page documentation systems', or too technical without user-facing language. To prevent over-triggering, add negative triggers explicitly stating what the skill should not be used for. For under-triggering, add more domain-specific keywords and phrasing. The description field appears in Claude's system prompt as the first level of progressive disclosure and is what Claude quotes back when asked when it would use a given skill.", "concepts": ["skill-description-field"], "temporal_scope": "2026", "token_estimate": 247}, {"id": "testing-strategy", "text": "As of early 2026: Skills should be tested at three increasing levels of rigor. Manual testing in Claude.ai is fastest with no setup required. Scripted testing in Claude Code automates test cases for repeatable validation. Programmatic testing via the Skills API builds evaluation suites that run systematically against defined test sets. Effective testing covers three areas: triggering tests to ensure the skill loads at the right times, functional tests to verify the skill produces correct outputs with successful API calls and proper error handling, and performance comparison to prove the skill improves results versus baseline. The skill-creator skill helps design and refine skills but does not execute automated test suites or produce quantitative evaluation results. The most effective approach is to iterate on a single challenging task until Claude succeeds, then extract the winning approach into the skill, before broadening to coverage testing.", "concepts": ["testing-strategy"], "temporal_scope": "2026", "token_estimate": 239}, {"id": "skill-iteration", "text": "As of early 2026: Skills are living documents that should be iteratively improved based on operational signals. Three failure modes each have distinct solutions. Under-triggering occurs when the skill doesn't load automatically, users manually enable it, or there are support questions about when to use it; the solution is to add more detail and domain-specific keywords to the description. Over-triggering occurs when the skill loads for irrelevant queries, users disable it, or there is confusion about purpose; the solution is to add negative triggers and be more specific about scope. Execution issues such as inconsistent results, API call failures, and user corrections needed point to instruction quality problems; the solution is to improve instruction clarity and add error handling. An advanced technique for critical validations is to bundle a script that performs checks programmatically rather than relying on language instructions, because code is deterministic while language interpretation is not.", "concepts": ["skill-iteration"], "temporal_scope": "2026", "token_estimate": 253}, {"id": "distribution-model", "text": "As of January 2026: Skills are distributed by downloading and zipping a skill folder, then uploading to Claude.ai via Settings, Capabilities, Skills, or by placing the folder in the Claude Code skills directory. Organization-level deployment, which shipped on December 18, 2025, allows administrators to deploy skills workspace-wide with automatic updates and centralized management. The recommended distribution approach is to host the skill on GitHub in a public repository with a clear README for human visitors (separate from the skill folder, which should not contain a README.md), to document the skill in the MCP repository, and to provide an installation guide. Skills should be positioned by the outcomes they enable for users rather than by their technical structure. Partner skills are available from companies including Asana, Atlassian, Canva, Figma, Sentry, and Zapier.", "concepts": ["distribution-model"], "temporal_scope": "2026", "token_estimate": 220}, {"id": "open-standard-skills-api", "text": "As of early 2026: Anthropic has published Agent Skills as an open standard with the aspiration that skills should be portable across AI platforms, analogous to MCP. The Skills API provides programmatic control through the /v1/skills endpoint for listing and managing skills, the container.skills parameter in Messages API requests, version control through the Claude Console, and integration with the Claude Agent SDK. API access requires the Code Execution Tool beta. The appropriate surface depends on use case: Claude.ai and Claude Code are best for end users interacting directly, manual testing, and individual ad-hoc workflows; the API is best for applications using skills programmatically, production deployments at scale, and automated pipelines and agent systems. Anthropic has been collaborating with ecosystem members on the standard and reports early adoption.", "concepts": ["open-standard-skills-api"], "temporal_scope": "2026", "token_estimate": 218}, {"id": "workflow-patterns", "text": "As of early 2026: Five recurring structural patterns for skill instructions have been distilled from early adopters and internal teams at Anthropic. Pattern 1, Sequential Workflow Orchestration, is used for multi-step processes in a specific order and relies on explicit step ordering, dependencies between steps, validation at each stage, and rollback instructions for failures. Pattern 2, Multi-MCP Coordination, is used when workflows span multiple services such as Figma, Drive, Linear, and Slack, and requires clear phase separation, data passing between MCPs, and centralized error handling. Pattern 3, Iterative Refinement, is used when output quality improves with iteration loops of drafting, quality checking, and refinement until a threshold is met. Pattern 4, Context-Aware Tool Selection, handles the same outcome with different tools depending on context, using a decision tree with fallback options and transparency about choices. Pattern 5, Domain-Specific Intelligence, embeds specialized knowledge beyond tool access such as compliance rules or financial governance, with compliance-before-action ordering and comprehensive audit trails.", "concepts": ["workflow-patterns"], "temporal_scope": "2026", "token_estimate": 288}, {"id": "troubleshooting-reference", "text": "As of early 2026: Common skill failures map to specific causes and solutions. Upload errors are caused by incorrect SKILL.md spelling (must be case-sensitive), missing YAML delimiters (triple dashes), skill names with spaces or capitals instead of kebab-case, or XML angle brackets in the frontmatter. A skill that never loads automatically usually has a description that is too generic or lacks trigger phrases users would actually say; the fix is to revise the description and ask Claude when it would use the skill to see what the model reads. A skill that triggers too often should have negative triggers added and a more specific scope statement. MCP connection failures should be isolated by testing the MCP tool directly without the skill to determine whether the issue is in the MCP server or the skill instructions. Instructions not being followed is usually caused by instructions being too verbose, buried too deep in the file, or using ambiguous language; critical checks should use explicit language such as CRITICAL: Before calling X, verify the following. Large context or performance degradation is caused by SKILL.md being too large, too many skills enabled simultaneously, or all content being loaded rather than using progressive disclosure.", "concepts": ["troubleshooting-reference"], "temporal_scope": "2026", "token_estimate": 315}], "open_questions": ["What exactly constitutes the 'Code Execution Tool beta' required for the Skills API — is this the same as Claude's built-in code execution, or a separate beta program?", "How does the open standard specification for Agent Skills differ from MCP technically? No schema or versioning details provided in this guide.", "The success metric of '90% trigger rate on relevant queries' is described as aspirational — what tooling is Anthropic developing to measure this more precisely?", "The allowed-tools field is listed as optional with example syntax but not fully documented — what is the complete list of allowed tool identifiers?", "How does the three-level progressive disclosure system handle skill conflicts when multiple skills are loaded simultaneously? No conflict resolution mechanism is described.", "The guide claims '15-30 minutes to build and test your first working skill' — this depends heavily on use-case complexity; no complexity classification is provided."]};</script>
+  <script id="kd-graph-data" type="application/json">{"@context": {"@vocab": "https://schema.org/", "kd": "https://knowledge-distiller.dev/v4/", "nodes": "kd:nodes", "edges": "kd:edges", "chunks": "kd:chunks", "confidence": "kd:confidence", "temporal": "kd:temporal", "cluster": "kd:cluster", "weight": "kd:weight", "sources": "kd:sources", "citations": "kd:citations", "resource": "schema:url"}, "metadata": {"title": "Complete Guide to Building Skills for Claude — Knowledge Distillation", "distiller_version": "4.0", "distiller_spec_version": "1.0", "sources": [{"id": "s1", "file": "building-skills-for-claude.pdf", "type": "pdf", "date": "2026-01", "url": null}], "distillation_date": "2026-06-26", "domain": "AI / LLM Customization / Prompt Engineering", "language": "en", "depth": "deep", "mode": "fresh", "quality_score": 100, "temporal_confidence": "inferred", "concept_count": 13, "relationship_count": 15, "cluster_count": 7, "fact_count": 13, "conformance_score": 100}, "clusters": [{"id": "skill-anatomy", "label": "Skill Anatomy", "description": "What a skill is and how it is structured technically", "concepts": ["skill", "yaml-frontmatter"]}, {"id": "design-principles", "label": "Design Principles", "description": "Core design philosophy governing how skills should be built", "concepts": ["progressive-disclosure", "mcp", "skill-description-field"]}, {"id": "planning-use-cases", "label": "Planning \u0026 Use Cases", "description": "How to identify and define what a skill should do", "concepts": ["skill-use-case-categories", "use-case-definition"]}, {"id": "testing-iteration", "label": "Testing \u0026 Iteration", "description": "How to validate, debug, and improve skills over time", "concepts": ["testing-strategy", "skill-iteration"]}, {"id": "distribution", "label": "Distribution", "description": "How skills are shared, installed, and used programmatically", "concepts": ["distribution-model", "open-standard-skills-api"]}, {"id": "workflow-patterns", "label": "Workflow Patterns", "description": "Proven structural patterns for skill instructions", "concepts": ["workflow-patterns"]}, {"id": "troubleshooting", "label": "Troubleshooting", "description": "Common failure modes and their solutions", "concepts": ["troubleshooting-reference"]}], "nodes": [{"id": "skill", "label": "Skill", "cluster": "skill-anatomy", "confidence": "high", "definition": "A skill is a folder-based instruction package that teaches Claude how to handle specific tasks or workflows. It consists of a required SKILL.md file (Markdown with YAML frontmatter) and optional subdirectories: scripts/ (executable code), references/ (documentation), and assets/ (templates, fonts, icons).", "relevance": "Skills eliminate the need to re-explain preferences and workflows in every conversation. They encode repeatable processes once, making Claude's behavior consistent and automating multi-step workflows. For MCP builders, skills add the knowledge layer on top of raw tool access.", "resource": null, "statements": ["A skill must contain exactly one SKILL.md file (case-sensitive); the folder name must be kebab-case. [1]", "Skills work identically across Claude.ai, Claude Code, and the API without modification.", "Claude can load multiple skills simultaneously; each skill must work alongside others.", "Skills are most powerful for repeatable workflows: document generation, consistent research methodology, multi-step process orchestration.", "A first working skill can be built and tested in 15-30 minutes using the skill-creator skill."], "temporal": {"source_date": "2026-01", "source_period": null, "valid_from": "2025", "valid_until": null, "temporal_confidence": "inferred"}, "sources": ["s1"], "citations": [{"n": 1, "source": "s1", "locator": null, "label": "Building Skills for Claude — Complete Guide", "url": null}], "note": "The guide uses a kitchen analogy: MCP is the professional kitchen (tools and ingredients); skills are the recipes (how to use them). This cleanly separates connectivity concerns from workflow knowledge."}, {"id": "yaml-frontmatter", "label": "YAML Frontmatter", "cluster": "skill-anatomy", "confidence": "high", "definition": "The YAML frontmatter block (delimited by ---) at the top of SKILL.md is the metadata section that Claude reads to decide whether to load the skill. It is the first level of the progressive disclosure system, always loaded into the system prompt even before the full skill body.", "relevance": "The frontmatter is the most critical part of a skill. A poorly written description causes under-triggering (skill never loads) or over-triggering (skill loads for unrelated tasks). The description field is the primary trigger mechanism.", "resource": null, "statements": ["Only two fields are required: name (kebab-case) and description (what it does + when to use it, under 1024 characters, no XML angle brackets). [1]", "description MUST include both what the skill does and trigger conditions with specific phrases users would say.", "Optional fields: license, allowed-tools, compatibility (1-500 chars), metadata (author, version, mcp-server, category, tags).", "Forbidden in frontmatter: XML angle brackets \u003c \u003e and skill names containing 'claude' or 'anthropic' (reserved namespace).", "Debugging: Ask Claude 'When would you use the [skill name] skill?' to surface what is triggering or not triggering it."], "temporal": {"source_date": "2026-01", "source_period": null, "valid_from": "2025", "valid_until": null, "temporal_confidence": "inferred"}, "sources": ["s1"], "citations": [{"n": 1, "source": "s1", "locator": null, "label": "Building Skills for Claude — Complete Guide", "url": null}]}, {"id": "progressive-disclosure", "label": "Progressive Disclosure", "cluster": "design-principles", "confidence": "high", "definition": "A three-level loading system that minimizes token consumption while preserving specialized expertise. Level 1 (YAML frontmatter) is always loaded. Level 2 (SKILL.md body) loads when Claude judges the skill relevant. Level 3 (linked files in references/) loads only when specifically needed within a task.", "relevance": "Without progressive disclosure, having many skills enabled would flood the system prompt with irrelevant instructions, degrading performance. This system allows 20-50 skills to coexist without interference.", "resource": null, "statements": ["Keep SKILL.md under 5,000 words; move detailed documentation to references/. [1]", "The practical limit before context degradation is 20-50 simultaneously enabled skills.", "References/ files are Claude-navigable: Claude discovers and loads them only as needed.", "Critical instructions should appear at the top of SKILL.md, not buried in later sections."], "temporal": {"source_date": "2026-01", "source_period": null, "valid_from": "2025", "valid_until": null, "temporal_confidence": "inferred"}, "sources": ["s1"], "citations": [{"n": 1, "source": "s1", "locator": null, "label": "Building Skills for Claude — Complete Guide", "url": null}]}, {"id": "mcp", "label": "MCP (Model Context Protocol)", "cluster": "design-principles", "confidence": "high", "definition": "The Model Context Protocol (MCP) is a connectivity layer that gives Claude access to external services and tools (Notion, Asana, Linear, etc.) and provides real-time data access and tool invocation. In the skills ecosystem, MCP answers 'what Claude can do' while skills answer 'how Claude should do it'.", "relevance": "For skill builders working with MCP integrations, skills serve as the knowledge and workflow layer on top of raw MCP tool access. Without skills, MCP users face a blank slate — they have tool access but no workflow guidance.", "resource": "https://modelcontextprotocol.io", "statements": ["MCP provides connectivity; skills provide the workflow knowledge and best practices on top. [1]", "Without skills, MCP users face each conversation from scratch, inconsistent results, and support requests about how to use the integration.", "With skills, pre-built workflows activate automatically, best practices are embedded in every interaction, and the learning curve is reduced.", "Skills for MCP (Category 3) coordinate multiple MCP calls in sequence and embed domain expertise.", "MCP connection issues should be tested independently from the skill — call an MCP tool directly without the skill to isolate whether the failure is in MCP or the skill."], "temporal": {"source_date": "2026-01", "source_period": null, "valid_from": "2025", "valid_until": null, "temporal_confidence": "inferred"}, "sources": ["s1"], "citations": [{"n": 1, "source": "s1", "locator": null, "label": "Building Skills for Claude — Complete Guide", "url": null}]}, {"id": "skill-use-case-categories", "label": "Skill Use Case Categories", "cluster": "planning-use-cases", "confidence": "high", "definition": "Anthropic has identified three canonical skill use case categories based on patterns observed across early adopters and internal teams: (1) Document and Asset Creation, (2) Workflow Automation, and (3) MCP Enhancement.", "relevance": "Knowing which category a skill belongs to determines the right design patterns, technical approach, and test strategy. Categories are not mutually exclusive but most skills lean toward one.", "resource": null, "statements": ["Category 1 — Document and Asset Creation: embedded style guides and templates, quality checklists, no external tools required. Real example: frontend-design skill. [1]", "Category 2 — Workflow Automation: step-by-step workflows with validation gates, iterative refinement loops, built-in review suggestions. Real example: skill-creator skill.", "Category 3 — MCP Enhancement: coordinates multiple MCP calls in sequence, embeds domain expertise, handles common MCP errors. Real example: sentry-code-review skill from Sentry.", "Problem-first framing: user describes outcome, skill orchestrates tools. Tool-first framing: user has tool access, skill provides workflow expertise.", "Most skills lean one direction; knowing which framing fits the use case helps choose the right workflow pattern."], "temporal": {"source_date": "2026-01", "source_period": null, "valid_from": "2025", "valid_until": null, "temporal_confidence": "inferred"}, "sources": ["s1"], "citations": [{"n": 1, "source": "s1", "locator": null, "label": "Building Skills for Claude — Complete Guide", "url": null}]}, {"id": "use-case-definition", "label": "Use Case Definition \u0026 Success Criteria", "cluster": "planning-use-cases", "confidence": "high", "definition": "Before writing any skill instructions, identify 2-3 concrete use cases. A good use case definition specifies: trigger phrase, ordered steps, tools required, and expected result. Success criteria are defined both quantitatively (trigger rate, tool call count, API error rate) and qualitatively (user autonomy, output consistency).", "relevance": "Skills without defined use cases tend to be vague, triggering incorrectly or failing to complete workflows. Success criteria create measurable targets and a feedback loop for iteration.", "resource": null, "statements": ["Quantitative targets: 90% trigger rate on relevant queries; zero failed API calls per workflow; measurable token reduction vs. baseline. [1]", "Qualitative targets: users never need to prompt next steps; workflows complete without user correction; consistent results across sessions.", "Performance comparison benchmark: without skill = 15 messages, 3 failed API calls, 12,000 tokens; with skill = 2 questions, 0 failures, 6,000 tokens.", "Success measurement is partly vibes-based — Anthropic acknowledges active development of more robust tooling.", "Use case definition should answer: what does a user want to accomplish, what multi-step workflows are required, which tools are needed, what domain knowledge should be embedded."], "temporal": {"source_date": "2026-01", "source_period": null, "valid_from": "2025", "valid_until": null, "temporal_confidence": "inferred"}, "sources": ["s1"], "citations": [{"n": 1, "source": "s1", "locator": null, "label": "Building Skills for Claude — Complete Guide", "url": null}]}, {"id": "skill-description-field", "label": "Skill Description Field", "cluster": "design-principles", "confidence": "high", "definition": "The description field in YAML frontmatter is the primary mechanism by which Claude decides whether to activate a skill. It must follow the structure: [What it does] + [When to use it] + [Key capabilities]. It must include natural-language trigger phrases that real users would say.", "relevance": "This single field determines whether a skill is effective in practice. Vague descriptions lead to under-triggering; overly broad descriptions cause over-triggering.", "resource": null, "statements": ["Good description: specific, includes trigger phrases users say, mentions file types if relevant, under 1024 characters. [1]", "Bad description examples: 'Helps with projects' (too vague), 'Creates sophisticated multi-page documentation systems' (missing triggers), 'Implements the Project entity model' (too technical).", "Add negative triggers to prevent over-triggering: 'Do NOT use for simple data exploration (use data-viz skill instead).'", "For under-triggering: add more detail and domain-specific keywords. For over-triggering: add negative triggers and scope constraints.", "The description field appears in Claude's system prompt as the first level of progressive disclosure."], "temporal": {"source_date": "2026-01", "source_period": null, "valid_from": "2025", "valid_until": null, "temporal_confidence": "inferred"}, "sources": ["s1"], "citations": [{"n": 1, "source": "s1", "locator": null, "label": "Building Skills for Claude — Complete Guide", "url": null}]}, {"id": "testing-strategy", "label": "Testing Strategy", "cluster": "testing-iteration", "confidence": "high", "definition": "Skills should be tested at three increasing levels of rigor: (1) manual testing in Claude.ai for fast iteration, (2) scripted testing in Claude Code for repeatable validation, and (3) programmatic testing via the Skills API for systematic evaluation suites. Effective testing covers three areas: triggering tests, functional tests, and performance comparison.", "relevance": "Skills are living documents that degrade or drift without testing. The recommended approach of iterating on one challenging task until it works before broadening coverage provides faster signal.", "resource": null, "statements": ["Triggering tests: verify the skill loads on obvious tasks, paraphrased requests, and does NOT load on unrelated queries. Run 10-20 test queries. [1]", "Functional tests: verify correct outputs, successful API calls, error handling, and edge case coverage.", "Performance comparison: count messages, failed API calls, and tokens consumed with vs. without the skill enabled.", "The skill-creator skill helps design and refine skills but does NOT run automated test suites or produce quantitative evaluation results.", "Pro tip: iterate on a single challenging task to success before expanding to coverage testing — this leverages Claude's in-context learning."], "temporal": {"source_date": "2026-01", "source_period": null, "valid_from": "2025", "valid_until": null, "temporal_confidence": "inferred"}, "sources": ["s1"], "citations": [{"n": 1, "source": "s1", "locator": null, "label": "Building Skills for Claude — Complete Guide", "url": null}]}, {"id": "skill-iteration", "label": "Skill Iteration", "cluster": "testing-iteration", "confidence": "high", "definition": "Skills are living documents that should be iteratively improved based on operational signals. Three failure modes each have distinct solutions: under-triggering, over-triggering, and execution issues.", "relevance": "A skill that worked at launch may degrade as users discover edge cases. Iteration based on clear diagnostic signals prevents skill abandonment.", "resource": null, "statements": ["Under-triggering signals: skill doesn't load automatically, users manually enabling it, support questions about when to use it. Solution: enrich description with more keywords. [1]", "Over-triggering signals: skill loads for irrelevant queries, users disabling it, confusion about purpose. Solution: add negative triggers, be more specific about scope.", "Execution issues: inconsistent results, API failures, user corrections needed. Solution: improve instructions, add error handling.", "Advanced technique: for critical validations, use a bundled script rather than language instructions — code is deterministic, language interpretation is not."], "temporal": {"source_date": "2026-01", "source_period": null, "valid_from": "2025", "valid_until": null, "temporal_confidence": "inferred"}, "sources": ["s1"], "citations": [{"n": 1, "source": "s1", "locator": null, "label": "Building Skills for Claude — Complete Guide", "url": null}]}, {"id": "distribution-model", "label": "Distribution Model", "cluster": "distribution", "confidence": "high", "definition": "As of January 2026, skills are distributed by downloading and zipping a skill folder, then uploading to Claude.ai via Settings \u003e Capabilities \u003e Skills, or placing in the Claude Code skills directory. Organization-level deployment (shipped December 18, 2025) allows admins to deploy skills workspace-wide with automatic updates and centralized management.", "relevance": "Understanding the distribution model is necessary for both individual use and enterprise rollout. The API path enables production deployments and automated pipelines.", "resource": null, "statements": ["Individual installation: Download folder, zip, upload to Claude.ai, or place in Claude Code skills directory. [1]", "Organization deployment (since December 18, 2025): admins deploy workspace-wide with automatic updates.", "Recommended distribution: host on GitHub (public repo + clear README for humans), document in MCP repo, create installation guide.", "Skills should be positioned by outcomes, not technical details: focus on what users can accomplish, not on the folder structure.", "Note: the skill folder itself should NOT contain a README.md; the repo-level README is for human visitors only."], "temporal": {"source_date": "2026-01", "source_period": null, "valid_from": "2025-12-18", "valid_until": null, "temporal_confidence": "explicit"}, "sources": ["s1"], "citations": [{"n": 1, "source": "s1", "locator": null, "label": "Building Skills for Claude — Complete Guide", "url": null}]}, {"id": "open-standard-skills-api", "label": "Open Standard \u0026 Skills API", "cluster": "distribution", "confidence": "high", "definition": "Anthropic has published Agent Skills as an open standard with the aspiration that skills should be portable across AI platforms (analogous to MCP). The Skills API provides programmatic control via /v1/skills endpoint, container.skills parameter in Messages API, version control through Claude Console, and integration with the Claude Agent SDK.", "relevance": "The open standard signals Anthropic's intent for skills to be an ecosystem-level primitive. The API path unlocks production-scale deployment and agent-system integration beyond Claude.ai.", "resource": null, "statements": ["API use cases: applications using skills programmatically, production deployments at scale, automated pipelines and agent systems. Requires Code Execution Tool beta. [1]", "Claude.ai / Claude Code use cases: end users interacting directly, manual testing during development, individual ad-hoc workflows.", "Skills can note platform-specific capabilities in the compatibility field.", "Like MCP, the goal is for skills to be portable — the same skill should work whether using Claude or other AI platforms.", "Public reference: GitHub anthropics/skills repository contains Anthropic-created skills available for customization."], "temporal": {"source_date": "2026-01", "source_period": null, "valid_from": "2026-01", "valid_until": null, "temporal_confidence": "inferred"}, "sources": ["s1"], "citations": [{"n": 1, "source": "s1", "locator": null, "label": "Building Skills for Claude — Complete Guide", "url": null}]}, {"id": "workflow-patterns", "label": "Workflow Patterns", "cluster": "workflow-patterns", "confidence": "high", "definition": "Five recurring structural patterns for skill instructions, distilled from early adopters and internal teams: (1) Sequential Workflow Orchestration, (2) Multi-MCP Coordination, (3) Iterative Refinement, (4) Context-Aware Tool Selection, (5) Domain-Specific Intelligence. These are heuristics, not prescriptive templates.", "relevance": "Choosing the wrong pattern leads to brittle or incomplete skills. Each pattern targets a specific class of workflow complexity.", "resource": null, "statements": ["Pattern 1 — Sequential Workflow Orchestration: multi-step processes in a specific order. Key: explicit step ordering, dependencies, validation gates, rollback instructions. [1]", "Pattern 2 — Multi-MCP Coordination: workflows spanning multiple services (e.g., Figma to Drive to Linear to Slack). Key: clear phase separation, data passing between MCPs, centralized error handling.", "Pattern 3 — Iterative Refinement: quality improves with iteration loops (initial draft, quality check, refinement, finalization). Key: explicit quality criteria, validation scripts, termination condition.", "Pattern 4 — Context-Aware Tool Selection: same outcome, different tools depending on context (e.g., file size determines cloud vs. local storage). Key: decision tree, fallback options, transparency.", "Pattern 5 — Domain-Specific Intelligence: skill adds specialized knowledge beyond tool access (e.g., compliance rules, brand standards). Key: domain expertise embedded in logic, compliance-before-action ordering, audit trail."], "temporal": {"source_date": "2026-01", "source_period": null, "valid_from": "2025", "valid_until": null, "temporal_confidence": "inferred"}, "sources": ["s1"], "citations": [{"n": 1, "source": "s1", "locator": null, "label": "Building Skills for Claude — Complete Guide", "url": null}], "note": "The Home Depot framing: problem-first means user describes outcome and skill orchestrates tools; tool-first means user has tool access and skill provides workflow expertise. Most skills lean one direction."}, {"id": "troubleshooting-reference", "label": "Troubleshooting Reference", "cluster": "troubleshooting", "confidence": "high", "definition": "A structured catalog of common skill failures mapped to causes and solutions. Covers upload errors, triggering issues, MCP connection failures, instruction non-compliance, and context/performance degradation.", "relevance": "Skill failures are often silent (no error, just wrong behavior). Knowing the failure taxonomy enables faster diagnosis without trial-and-error.", "resource": null, "statements": ["Upload errors: SKILL.md must be exactly this spelling (case-sensitive); YAML must have --- delimiters; name must be kebab-case; no XML angle brackets. [1]", "Skill does not trigger: description too generic, missing trigger phrases. Fix by asking Claude 'When would you use [skill name]?' and revising.", "Skill triggers too often: add negative triggers, be more specific, clarify scope explicitly.", "MCP connection issues: verify server connected, check auth tokens, test MCP independently without the skill, verify tool names are case-sensitive.", "Instructions not followed: keep concise, put critical instructions at top with Critical headers, use deterministic language, add performance notes in user prompts rather than SKILL.md.", "Large context / performance degradation: keep SKILL.md under 5,000 words, limit simultaneous skills to 20-50, use progressive disclosure."], "temporal": {"source_date": "2026-01", "source_period": null, "valid_from": "2025", "valid_until": null, "temporal_confidence": "inferred"}, "sources": ["s1"], "citations": [{"n": 1, "source": "s1", "locator": null, "label": "Building Skills for Claude — Complete Guide", "url": null}]}], "edges": [{"source": "skill", "target": "yaml-frontmatter", "type": "uses", "label": "A skill uses YAML frontmatter as its primary metadata and trigger mechanism", "weight": 1.0, "confidence": "high", "id": "skill__uses__yaml-frontmatter"}, {"source": "skill", "target": "progressive-disclosure", "type": "enables", "label": "The skill folder structure enables three-level progressive disclosure", "weight": 1.0, "confidence": "high", "id": "skill__enables__progressive-disclosure"}, {"source": "yaml-frontmatter", "target": "skill-description-field", "type": "part-of", "label": "The description field is the most important part of YAML frontmatter", "weight": 1.0, "confidence": "high", "id": "yaml-frontmatter__part-of__skill-description-field"}, {"source": "skill-description-field", "target": "testing-strategy", "type": "enables", "label": "The description field is what triggering tests validate", "weight": 0.8, "confidence": "high", "id": "skill-description-field__enables__testing-strategy"}, {"source": "mcp", "target": "skill", "type": "extends", "label": "Skills extend MCP by adding the workflow knowledge layer on top of connectivity", "weight": 1.0, "confidence": "high", "id": "mcp__extends__skill"}, {"source": "skill-use-case-categories", "target": "use-case-definition", "type": "based-on", "label": "Use case categories provide the framework for concrete use case definition", "weight": 0.8, "confidence": "high", "id": "skill-use-case-categories__based-on__use-case-definition"}, {"source": "use-case-definition", "target": "skill-description-field", "type": "enables", "label": "A well-defined use case directly informs the description field content", "weight": 0.9, "confidence": "high", "id": "use-case-definition__enables__skill-description-field"}, {"source": "testing-strategy", "target": "skill-iteration", "type": "enables", "label": "Testing surfaces the signals needed for iteration", "weight": 1.0, "confidence": "high", "id": "testing-strategy__enables__skill-iteration"}, {"source": "skill-iteration", "target": "skill-description-field", "type": "extends", "label": "Iteration typically requires refining the description field", "weight": 0.9, "confidence": "high", "id": "skill-iteration__extends__skill-description-field"}, {"source": "distribution-model", "target": "open-standard-skills-api", "type": "extends", "label": "The API extends the manual distribution model for programmatic use", "weight": 0.8, "confidence": "high", "id": "distribution-model__extends__open-standard-skills-api"}, {"source": "workflow-patterns", "target": "mcp", "type": "uses", "label": "Most workflow patterns orchestrate MCP tool calls", "weight": 0.9, "confidence": "high", "id": "workflow-patterns__uses__mcp"}, {"source": "troubleshooting-reference", "target": "skill-iteration", "type": "extends", "label": "Troubleshooting is the diagnostic phase of the iteration cycle", "weight": 0.8, "confidence": "high", "id": "troubleshooting-reference__extends__skill-iteration"}, {"source": "progressive-disclosure", "target": "yaml-frontmatter", "type": "based-on", "label": "Level 1 of progressive disclosure is the YAML frontmatter", "weight": 1.0, "confidence": "high", "id": "progressive-disclosure__based-on__yaml-frontmatter"}, {"source": "skill-use-case-categories", "target": "workflow-patterns", "type": "enables", "label": "The use case category determines which workflow pattern to apply", "weight": 0.8, "confidence": "medium", "id": "skill-use-case-categories__enables__workflow-patterns"}, {"source": "open-standard-skills-api", "target": "mcp", "type": "based-on", "label": "Agent Skills open standard is designed analogously to MCP as a cross-platform primitive", "weight": 0.7, "confidence": "medium", "id": "open-standard-skills-api__based-on__mcp"}], "facts": [{"id": "f1", "statement": "Skill build time for first skill", "value": "15-30 minutes", "temporal": {"source_date": null, "source_period": null, "valid_from": "2026-01", "valid_until": null, "temporal_confidence": "inferred"}, "confidence": "medium", "source": "s1", "context": "Using the skill-creator skill for an initial working skill"}, {"id": "f2", "statement": "Description field maximum length", "value": "1024 characters", "temporal": {"source_date": null, "source_period": null, "valid_from": "2026-01", "valid_until": null, "temporal_confidence": "inferred"}, "confidence": "high", "source": "s1", "context": "YAML frontmatter description field constraint"}, {"id": "f3", "statement": "compatibility field maximum length", "value": "500 characters", "temporal": {"source_date": null, "source_period": null, "valid_from": "2026-01", "valid_until": null, "temporal_confidence": "inferred"}, "confidence": "high", "source": "s1", "context": "YAML frontmatter optional compatibility field"}, {"id": "f4", "statement": "SKILL.md recommended maximum size", "value": "5,000 words", "temporal": {"source_date": null, "source_period": null, "valid_from": "2026-01", "valid_until": null, "temporal_confidence": "inferred"}, "confidence": "medium", "source": "s1", "context": "Above this limit, context performance degrades; move detailed docs to references/"}, {"id": "f5", "statement": "Simultaneous skills practical limit", "value": "20-50 skills", "temporal": {"source_date": null, "source_period": null, "valid_from": "2026-01", "valid_until": null, "temporal_confidence": "inferred"}, "confidence": "medium", "source": "s1", "context": "Beyond this, context performance degrades; use selective enablement"}, {"id": "f6", "statement": "Organization-level skills feature shipped", "value": "December 18, 2025", "temporal": {"source_date": null, "source_period": null, "valid_from": "2025-12-18", "valid_until": null, "temporal_confidence": "explicit"}, "confidence": "high", "source": "s1", "context": "Workspace-wide admin deployment with automatic updates"}, {"id": "f7", "statement": "Token consumption with skill (illustrative example)", "value": "6,000 tokens (vs. 12,000 without skill)", "temporal": {"source_date": null, "source_period": null, "valid_from": "2026-01", "valid_until": null, "temporal_confidence": "inferred"}, "confidence": "low", "source": "s1", "context": "Performance comparison example in guide; 50% reduction"}, {"id": "f8", "statement": "Message count with skill (illustrative example)", "value": "2 messages (vs. 15 without skill)", "temporal": {"source_date": null, "source_period": null, "valid_from": "2026-01", "valid_until": null, "temporal_confidence": "inferred"}, "confidence": "low", "source": "s1", "context": "Performance comparison example in guide; 87% reduction"}, {"id": "f9", "statement": "Skill triggering aspirational target", "value": "90% on relevant queries", "temporal": {"source_date": null, "source_period": null, "valid_from": "2026-01", "valid_until": null, "temporal_confidence": "inferred"}, "confidence": "medium", "source": "s1", "context": "Aspirational benchmark, not a precise threshold; Anthropic developing better measurement tooling"}, {"id": "f10", "statement": "Skills API endpoint", "value": "/v1/skills", "temporal": {"source_date": null, "source_period": null, "valid_from": "2026-01", "valid_until": null, "temporal_confidence": "inferred"}, "confidence": "high", "source": "s1", "context": "For listing and managing skills programmatically; requires Code Execution Tool beta"}, {"id": "f11", "statement": "API parameter for adding skills to requests", "value": "container.skills", "temporal": {"source_date": null, "source_period": null, "valid_from": "2026-01", "valid_until": null, "temporal_confidence": "inferred"}, "confidence": "high", "source": "s1", "context": "Used in Messages API requests to include skills"}, {"id": "f12", "statement": "Public skills repository", "value": "github.com/anthropics/skills", "temporal": {"source_date": null, "source_period": null, "valid_from": "2026-01", "valid_until": null, "temporal_confidence": "inferred"}, "confidence": "high", "source": "s1", "context": "Anthropic-created reference skills available for customization"}, {"id": "f13", "statement": "Partner skills directory examples", "value": "Asana, Atlassian, Canva, Figma, Sentry, Zapier", "temporal": {"source_date": null, "source_period": null, "valid_from": "2026-01", "valid_until": null, "temporal_confidence": "inferred"}, "confidence": "high", "source": "s1", "context": "Partners with skills in the directory as of guide publication"}], "chunks": [{"id": "skill", "text": "As of early 2026: A skill is a folder-based instruction package that teaches Claude how to handle specific tasks or workflows. It consists of a required SKILL.md file with YAML frontmatter, and optional subdirectories for scripts (executable code), references (documentation), and assets (templates, fonts, icons). Skills eliminate the need to re-explain preferences and workflows in every conversation by encoding repeatable processes once, making Claude's behavior consistent and automating multi-step workflows. For MCP builders, skills add the knowledge layer on top of raw tool access. A skill must contain exactly one SKILL.md file (case-sensitive) and the folder name must be in kebab-case. Skills work identically across Claude.ai, Claude Code, and the API without modification. Claude can load multiple skills simultaneously, so each skill must work alongside others. Skills are most powerful for repeatable workflows such as document generation, consistent research methodology, and multi-step process orchestration. A first working skill can be built and tested in 15 to 30 minutes using the skill-creator skill. The guide uses a kitchen analogy: MCP is the professional kitchen providing tools and ingredients, while skills are the recipes describing how to use them.", "concepts": ["skill"], "temporal_scope": "2026", "token_estimate": 319}, {"id": "yaml-frontmatter", "text": "As of early 2026: The YAML frontmatter block delimited by triple dashes at the top of SKILL.md is the metadata section that Claude reads to decide whether to load the skill. It is always loaded into the system prompt as the first level of progressive disclosure. Only two fields are required: name in kebab-case matching the folder name, and description under 1024 characters with no XML angle brackets. The description must include both what the skill does and specific trigger conditions with phrases users would actually say. Optional fields include license, allowed-tools, compatibility for environment requirements, and metadata fields for author, version, MCP server name, category, and tags. Forbidden content includes XML angle brackets and skill names containing claude or anthropic, which are reserved to prevent prompt injection. A useful debugging technique is to ask Claude when it would use a given skill name, which causes Claude to quote back the description and reveal what is or is not triggering the skill.", "concepts": ["yaml-frontmatter"], "temporal_scope": "2026", "token_estimate": 256}, {"id": "progressive-disclosure", "text": "As of early 2026, and representing a timeless architectural principle: Progressive disclosure is a three-level loading system that minimizes token consumption while preserving specialized expertise. Level one is the YAML frontmatter, which is always loaded into the system prompt. Level two is the SKILL.md body, which loads when Claude judges the skill relevant to the current task. Level three consists of linked files in the references subdirectory, which Claude loads only when specifically needed within a task. Without progressive disclosure, having many skills enabled would flood the system prompt with irrelevant instructions and degrade performance. The system allows 20 to 50 skills to coexist without interference. SKILL.md should be kept under 5,000 words, with detailed documentation moved to references. Critical instructions should appear at the top of SKILL.md, not buried in later sections.", "concepts": ["progressive-disclosure"], "temporal_scope": "2026", "token_estimate": 227}, {"id": "mcp", "text": "As of early 2026: The Model Context Protocol (MCP) is a connectivity layer that gives Claude access to external services and tools such as Notion, Asana, and Linear, providing real-time data access and tool invocation. In the skills ecosystem, MCP answers what Claude can do while skills answer how Claude should do it. Without skills, MCP users face each conversation from scratch with inconsistent results and a steep learning curve. With skills, pre-built workflows activate automatically and best practices are embedded in every interaction. Skills for MCP integrations (Category 3) coordinate multiple MCP calls in sequence and embed domain expertise. When troubleshooting, MCP connection issues should be tested independently from the skill by calling an MCP tool directly without the skill to isolate whether a failure is in MCP or in the skill instructions.", "concepts": ["mcp"], "temporal_scope": "2026", "token_estimate": 216}, {"id": "skill-use-case-categories", "text": "As of early 2026: Anthropic has identified three canonical skill use case categories based on patterns observed across early adopters and internal teams. Category 1 is Document and Asset Creation, used for producing consistent high-quality output including documents, presentations, apps, and designs. It relies on embedded style guides, templates, and quality checklists without requiring external tools. A real example is the frontend-design skill. Category 2 is Workflow Automation, used for multi-step processes benefiting from consistent methodology and coordination across multiple MCP servers. It uses step-by-step workflows with validation gates and iterative refinement. A real example is the skill-creator skill. Category 3 is MCP Enhancement, used for workflow guidance layered on top of MCP tool access. It coordinates multiple MCP calls in sequence and embeds domain expertise. A real example is the sentry-code-review skill from Sentry. Most skills lean toward either a problem-first framing (user describes an outcome and the skill orchestrates tools) or a tool-first framing (user has tool access and the skill provides workflow expertise).", "concepts": ["skill-use-case-categories"], "temporal_scope": "2026", "token_estimate": 289}, {"id": "use-case-definition", "text": "As of early 2026: Before writing any skill instructions, it is important to identify 2 to 3 concrete use cases. A good use case definition specifies the trigger phrase, ordered steps, required tools, and expected result. Success criteria are defined both quantitatively and qualitatively. Quantitative targets include a 90% trigger rate on relevant queries, zero failed API calls per workflow, and a measurable token reduction versus a baseline. Qualitative targets include users never needing to prompt next steps, workflows completing without user correction, and consistent results across sessions. A benchmark in the guide shows that without a skill a task may require 15 back-and-forth messages, 3 failed API calls, and 12,000 tokens, while with a skill the same task requires only 2 clarifying questions, zero failures, and 6,000 tokens. Anthropic acknowledges that success measurement is partly vibes-based and that more robust tooling is under development.", "concepts": ["use-case-definition"], "temporal_scope": "2026", "token_estimate": 241}, {"id": "skill-description-field", "text": "As of early 2026: The description field in YAML frontmatter is the primary mechanism by which Claude decides whether to activate a skill. It must follow the structure of what the skill does, followed by when to use it, followed by key capabilities. It must include natural-language trigger phrases that real users would say. A good description is specific, includes trigger phrases, mentions relevant file types, and stays under 1024 characters. A bad description is too vague such as 'Helps with projects', missing triggers such as 'Creates sophisticated multi-page documentation systems', or too technical without user-facing language. To prevent over-triggering, add negative triggers explicitly stating what the skill should not be used for. For under-triggering, add more domain-specific keywords and phrasing. The description field appears in Claude's system prompt as the first level of progressive disclosure and is what Claude quotes back when asked when it would use a given skill.", "concepts": ["skill-description-field"], "temporal_scope": "2026", "token_estimate": 247}, {"id": "testing-strategy", "text": "As of early 2026: Skills should be tested at three increasing levels of rigor. Manual testing in Claude.ai is fastest with no setup required. Scripted testing in Claude Code automates test cases for repeatable validation. Programmatic testing via the Skills API builds evaluation suites that run systematically against defined test sets. Effective testing covers three areas: triggering tests to ensure the skill loads at the right times, functional tests to verify the skill produces correct outputs with successful API calls and proper error handling, and performance comparison to prove the skill improves results versus baseline. The skill-creator skill helps design and refine skills but does not execute automated test suites or produce quantitative evaluation results. The most effective approach is to iterate on a single challenging task until Claude succeeds, then extract the winning approach into the skill, before broadening to coverage testing.", "concepts": ["testing-strategy"], "temporal_scope": "2026", "token_estimate": 239}, {"id": "skill-iteration", "text": "As of early 2026: Skills are living documents that should be iteratively improved based on operational signals. Three failure modes each have distinct solutions. Under-triggering occurs when the skill doesn't load automatically, users manually enable it, or there are support questions about when to use it; the solution is to add more detail and domain-specific keywords to the description. Over-triggering occurs when the skill loads for irrelevant queries, users disable it, or there is confusion about purpose; the solution is to add negative triggers and be more specific about scope. Execution issues such as inconsistent results, API call failures, and user corrections needed point to instruction quality problems; the solution is to improve instruction clarity and add error handling. An advanced technique for critical validations is to bundle a script that performs checks programmatically rather than relying on language instructions, because code is deterministic while language interpretation is not.", "concepts": ["skill-iteration"], "temporal_scope": "2026", "token_estimate": 253}, {"id": "distribution-model", "text": "As of January 2026: Skills are distributed by downloading and zipping a skill folder, then uploading to Claude.ai via Settings, Capabilities, Skills, or by placing the folder in the Claude Code skills directory. Organization-level deployment, which shipped on December 18, 2025, allows administrators to deploy skills workspace-wide with automatic updates and centralized management. The recommended distribution approach is to host the skill on GitHub in a public repository with a clear README for human visitors (separate from the skill folder, which should not contain a README.md), to document the skill in the MCP repository, and to provide an installation guide. Skills should be positioned by the outcomes they enable for users rather than by their technical structure. Partner skills are available from companies including Asana, Atlassian, Canva, Figma, Sentry, and Zapier.", "concepts": ["distribution-model"], "temporal_scope": "2026", "token_estimate": 220}, {"id": "open-standard-skills-api", "text": "As of early 2026: Anthropic has published Agent Skills as an open standard with the aspiration that skills should be portable across AI platforms, analogous to MCP. The Skills API provides programmatic control through the /v1/skills endpoint for listing and managing skills, the container.skills parameter in Messages API requests, version control through the Claude Console, and integration with the Claude Agent SDK. API access requires the Code Execution Tool beta. The appropriate surface depends on use case: Claude.ai and Claude Code are best for end users interacting directly, manual testing, and individual ad-hoc workflows; the API is best for applications using skills programmatically, production deployments at scale, and automated pipelines and agent systems. Anthropic has been collaborating with ecosystem members on the standard and reports early adoption.", "concepts": ["open-standard-skills-api"], "temporal_scope": "2026", "token_estimate": 218}, {"id": "workflow-patterns", "text": "As of early 2026: Five recurring structural patterns for skill instructions have been distilled from early adopters and internal teams at Anthropic. Pattern 1, Sequential Workflow Orchestration, is used for multi-step processes in a specific order and relies on explicit step ordering, dependencies between steps, validation at each stage, and rollback instructions for failures. Pattern 2, Multi-MCP Coordination, is used when workflows span multiple services such as Figma, Drive, Linear, and Slack, and requires clear phase separation, data passing between MCPs, and centralized error handling. Pattern 3, Iterative Refinement, is used when output quality improves with iteration loops of drafting, quality checking, and refinement until a threshold is met. Pattern 4, Context-Aware Tool Selection, handles the same outcome with different tools depending on context, using a decision tree with fallback options and transparency about choices. Pattern 5, Domain-Specific Intelligence, embeds specialized knowledge beyond tool access such as compliance rules or financial governance, with compliance-before-action ordering and comprehensive audit trails.", "concepts": ["workflow-patterns"], "temporal_scope": "2026", "token_estimate": 288}, {"id": "troubleshooting-reference", "text": "As of early 2026: Common skill failures map to specific causes and solutions. Upload errors are caused by incorrect SKILL.md spelling (must be case-sensitive), missing YAML delimiters (triple dashes), skill names with spaces or capitals instead of kebab-case, or XML angle brackets in the frontmatter. A skill that never loads automatically usually has a description that is too generic or lacks trigger phrases users would actually say; the fix is to revise the description and ask Claude when it would use the skill to see what the model reads. A skill that triggers too often should have negative triggers added and a more specific scope statement. MCP connection failures should be isolated by testing the MCP tool directly without the skill to determine whether the issue is in the MCP server or the skill instructions. Instructions not being followed is usually caused by instructions being too verbose, buried too deep in the file, or using ambiguous language; critical checks should use explicit language such as CRITICAL: Before calling X, verify the following. Large context or performance degradation is caused by SKILL.md being too large, too many skills enabled simultaneously, or all content being loaded rather than using progressive disclosure.", "concepts": ["troubleshooting-reference"], "temporal_scope": "2026", "token_estimate": 315}], "open_questions": ["What exactly constitutes the 'Code Execution Tool beta' required for the Skills API — is this the same as Claude's built-in code execution, or a separate beta program?", "How does the open standard specification for Agent Skills differ from MCP technically? No schema or versioning details provided in this guide.", "The success metric of '90% trigger rate on relevant queries' is described as aspirational — what tooling is Anthropic developing to measure this more precisely?", "The allowed-tools field is listed as optional with example syntax but not fully documented — what is the complete list of allowed tool identifiers?", "How does the three-level progressive disclosure system handle skill conflicts when multiple skills are loaded simultaneously? No conflict resolution mechanism is described.", "The guide claims '15-30 minutes to build and test your first working skill' — this depends heavily on use-case complexity; no complexity classification is provided."]}</script>
   <script>
-/* Knowledge Distiller — interactive viewer (reads global GRAPH; no fetch). */
+/* Knowledge Distiller — dependency-free interactive SVG viewer. */
 (function () {
   "use strict";
 
-  var G = (typeof window !== "undefined" && window.GRAPH) ? window.GRAPH : {};
-  var META = G.metadata || {};
-  var NODES = Array.isArray(G.nodes) ? G.nodes : [];
-  var EDGES = Array.isArray(G.edges) ? G.edges : [];
-  var CLUSTERS = Array.isArray(G.clusters) ? G.clusters : [];
-  var FACTS = Array.isArray(G.facts) ? G.facts : [];
+  var SVG_NS = "http://www.w3.org/2000/svg";
+  var G = loadGraphData();
+  var META = isRecord(G.metadata) ? G.metadata : {};
+  var RAW_NODES = Array.isArray(G.nodes) ? G.nodes : [];
+  var RAW_EDGES = Array.isArray(G.edges) ? G.edges : [];
+  var CLUSTERS = records(G.clusters);
+  var FACTS = records(G.facts);
   var OPEN_Q = Array.isArray(G.open_questions) ? G.open_questions : [];
 
   var detailEl = document.getElementById("detail");
   var cyEl = document.getElementById("cy");
   var legendEl = document.getElementById("legend");
+  var searchEl = document.getElementById("search");
 
-  /* ---------- small helpers ---------- */
-  function esc(s) {
-    if (s === null || s === undefined) return "";
-    return String(s)
-      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
-  }
-  function md(s) {
-    if (!s) return "";
-    if (typeof window.marked !== "undefined") {
-      try {
-        var fn = window.marked.parse || window.marked;
-        return fn(String(s));
-      } catch (e) { /* fall through */ }
+  function loadGraphData() {
+    var dataElement = document.getElementById("kd-graph-data");
+    if (!dataElement) return {};
+    try {
+      var parsed = JSON.parse(dataElement.textContent || "{}");
+      return isRecord(parsed) ? parsed : {};
+    } catch (error) {
+      return {};
     }
-    return "<p>" + esc(s) + "</p>";
-  }
-  function val(v) { return v !== null && v !== undefined && v !== "" ? v : null; }
-
-  function clusterLabel(c) {
-    return (c && (c.label || c.name)) || (c && c.id) || "";
   }
 
-  /* ---------- header / metadata (works even without cytoscape) ---------- */
+  function isRecord(value) {
+    return value !== null && typeof value === "object" && !Array.isArray(value);
+  }
+
+  function records(value) {
+    return Array.isArray(value) ? value.filter(isRecord) : [];
+  }
+
+  function text(value) {
+    return value === null || value === undefined ? "" : String(value);
+  }
+
+  function present(value) {
+    return value !== null && value !== undefined && value !== "";
+  }
+
+  function clear(element) {
+    if (element) element.replaceChildren();
+  }
+
+  function element(tag, className, content) {
+    var node = document.createElement(tag);
+    if (className) node.className = className;
+    if (content !== undefined) node.textContent = text(content);
+    return node;
+  }
+
+  function svgElement(tag, className) {
+    var node = document.createElementNS(SVG_NS, tag);
+    if (className) node.setAttribute("class", className);
+    return node;
+  }
+
+  function appendTextWithBreaks(parent, value) {
+    text(value).split("\n").forEach(function (part, index) {
+      if (index) parent.appendChild(document.createElement("br"));
+      parent.appendChild(document.createTextNode(part));
+    });
+  }
+
+  /* Only explicit web/mail links are clickable. Other schemes and malformed URLs
+     degrade to plain text. Control characters are rejected before URL parsing. */
+  function safeUrl(value) {
+    if (typeof value !== "string") return null;
+    var candidate = value.trim();
+    if (!candidate || /[\u0000-\u001f\u007f]/.test(candidate)) return null;
+    try {
+      var parsed = new URL(candidate, window.location.href);
+      if (parsed.protocol === "https:" || parsed.protocol === "http:" || parsed.protocol === "mailto:") {
+        if (parsed.username || parsed.password) return null;
+        var credentialNames = {
+          accesskey: true, apikey: true, auth: true, authorization: true,
+          awsaccesskeyid: true, clientsecret: true, credential: true, jwt: true,
+          password: true, passwd: true, secret: true, secretkey: true,
+          sessionid: true, sig: true, signature: true, token: true
+        };
+        var credentialSuffixes = ["token", "apikey", "secret", "password", "credential", "signature"];
+        var containsCredential = false;
+        parsed.searchParams.forEach(function (_value, name) {
+          var normalized = name.toLowerCase().replace(/[^a-z0-9]+/g, "");
+          if (credentialNames[normalized] || credentialSuffixes.some(function (suffix) {
+            return normalized.slice(-suffix.length) === suffix;
+          })) containsCredential = true;
+        });
+        if (containsCredential) return null;
+        return parsed.href;
+      }
+    } catch (error) {
+      return null;
+    }
+    return null;
+  }
+
+  function externalLink(label, url) {
+    var safe = safeUrl(url);
+    if (!safe) return document.createTextNode(text(label));
+    var anchor = element("a", "", label);
+    anchor.href = safe;
+    anchor.target = "_blank";
+    anchor.rel = "noopener noreferrer";
+    anchor.referrerPolicy = "no-referrer";
+    return anchor;
+  }
+
+  /* A deliberately small Markdown renderer. It creates DOM nodes directly, so raw
+     HTML is displayed as text and cannot become active markup. */
+  var INLINE_MARKUP = /(`[^`\n]+`|\*\*[^*\n]+\*\*|__[^_\n]+__|\*[^*\n]+\*|_[^_\n]+_|\[[^\]\n]+\]\([^\)\n]+\))/g;
+
+  function wordLike(character) {
+    return !!character && /[A-Za-z0-9_\u00c0-\u024f]/.test(character);
+  }
+
+  function validUnderscoreDelimiter(source, match) {
+    var token = match[0];
+    if (token.charAt(0) !== "_") return true;
+    var before = source.charAt(match.index - 1);
+    var after = source.charAt(match.index + token.length);
+    return !wordLike(before) && !wordLike(after);
+  }
+
+  function appendInlineMarkdown(parent, value) {
+    var source = text(value);
+    var cursor = 0;
+    var match;
+    INLINE_MARKUP.lastIndex = 0;
+    while ((match = INLINE_MARKUP.exec(source)) !== null) {
+      /* CommonMark-style underscore delimiters cannot open or close inside a
+         word.  If a broad regex candidate spans identifiers such as
+         window.__state ... window.__state, restart one character later so
+         real markup nested in that text remains independently detectable. */
+      if (!validUnderscoreDelimiter(source, match)) {
+        INLINE_MARKUP.lastIndex = match.index + 1;
+        continue;
+      }
+      appendTextWithBreaks(parent, source.slice(cursor, match.index));
+      var token = match[0];
+      if (token.charAt(0) === "`") {
+        parent.appendChild(element("code", "", token.slice(1, -1)));
+      } else if (token.slice(0, 2) === "**" || token.slice(0, 2) === "__") {
+        var strong = element("strong");
+        appendTextWithBreaks(strong, token.slice(2, -2));
+        parent.appendChild(strong);
+      } else if (token.charAt(0) === "*" || token.charAt(0) === "_") {
+        var emphasis = element("em");
+        appendTextWithBreaks(emphasis, token.slice(1, -1));
+        parent.appendChild(emphasis);
+      } else {
+        var linkMatch = /^\[([^\]]+)\]\(([^)]+)\)$/.exec(token);
+        if (linkMatch) parent.appendChild(externalLink(linkMatch[1], linkMatch[2]));
+        else appendTextWithBreaks(parent, token);
+      }
+      cursor = match.index + token.length;
+    }
+    appendTextWithBreaks(parent, source.slice(cursor));
+  }
+
+  function appendMarkdown(parent, value) {
+    var lines = text(value).replace(/\r\n?/g, "\n").split("\n");
+    var index = 0;
+    while (index < lines.length) {
+      if (!lines[index].trim()) {
+        index += 1;
+        continue;
+      }
+
+      var bullet = /^\s*[-+*]\s+(.+)$/.exec(lines[index]);
+      var numbered = /^\s*\d+[.)]\s+(.+)$/.exec(lines[index]);
+      if (bullet || numbered) {
+        var list = element(numbered ? "ol" : "ul");
+        while (index < lines.length) {
+          var itemMatch = numbered
+            ? /^\s*\d+[.)]\s+(.+)$/.exec(lines[index])
+            : /^\s*[-+*]\s+(.+)$/.exec(lines[index]);
+          if (!itemMatch) break;
+          var item = element("li");
+          appendInlineMarkdown(item, itemMatch[1]);
+          list.appendChild(item);
+          index += 1;
+        }
+        parent.appendChild(list);
+        continue;
+      }
+
+      var heading = /^(#{1,6})\s+(.+)$/.exec(lines[index]);
+      if (heading) {
+        var headingEl = element(heading[1].length < 3 ? "h3" : "h4");
+        appendInlineMarkdown(headingEl, heading[2]);
+        parent.appendChild(headingEl);
+        index += 1;
+        continue;
+      }
+
+      if (/^\s*>\s?/.test(lines[index])) {
+        var quote = element("blockquote");
+        var quoteLines = [];
+        while (index < lines.length && /^\s*>\s?/.test(lines[index])) {
+          quoteLines.push(lines[index].replace(/^\s*>\s?/, ""));
+          index += 1;
+        }
+        appendInlineMarkdown(quote, quoteLines.join("\n"));
+        parent.appendChild(quote);
+        continue;
+      }
+
+      var paragraphLines = [];
+      while (index < lines.length && lines[index].trim() &&
+             !/^\s*[-+*]\s+/.test(lines[index]) &&
+             !/^\s*\d+[.)]\s+/.test(lines[index]) &&
+             !/^(#{1,6})\s+/.test(lines[index]) &&
+             !/^\s*>\s?/.test(lines[index])) {
+        paragraphLines.push(lines[index]);
+        index += 1;
+      }
+      var paragraph = element("p");
+      appendInlineMarkdown(paragraph, paragraphLines.join("\n"));
+      parent.appendChild(paragraph);
+    }
+  }
+
+  function clusterLabel(cluster) {
+    return text(cluster && (cluster.label || cluster.name || cluster.id));
+  }
+
+  var PALETTE = [
+    "#4e79a7", "#f28e2b", "#e15759", "#3f8884", "#4f8f45",
+    "#9b7818", "#996690", "#c65f76", "#816052", "#337b78",
+    "#4b7d77", "#9b4f70", "#5188ad", "#568c4f", "#806f1f"
+  ];
+  var DEFAULT_COLOR = "#7b8794";
+  var clusterColor = Object.create(null);
+  var clusterById = Object.create(null);
+  CLUSTERS.forEach(function (cluster, index) {
+    if (!present(cluster.id)) return;
+    var id = text(cluster.id);
+    clusterColor[id] = PALETTE[index % PALETTE.length];
+    clusterById[id] = cluster;
+  });
+
+  function colorFor(clusterId) {
+    return clusterColor[text(clusterId)] || DEFAULT_COLOR;
+  }
+
+  var NODES = [];
+  var nodeById = Object.create(null);
+  RAW_NODES.forEach(function (candidate) {
+    if (!isRecord(candidate) || !present(candidate.id)) return;
+    var id = text(candidate.id);
+    if (Object.prototype.hasOwnProperty.call(nodeById, id)) return;
+    nodeById[id] = candidate;
+    NODES.push(candidate);
+  });
+
+  var EDGES = [];
+  RAW_EDGES.forEach(function (candidate) {
+    if (!isRecord(candidate)) return;
+    var source = text(candidate.source);
+    var target = text(candidate.target);
+    if (!nodeById[source] || !nodeById[target]) return;
+    EDGES.push(candidate);
+  });
+
+  var supersededSet = Object.create(null);
+  NODES.forEach(function (node) {
+    var temporal = isRecord(node.temporal) ? node.temporal : {};
+    if (present(temporal.valid_until)) supersededSet[text(node.id)] = true;
+  });
+  EDGES.forEach(function (edge) {
+    if (edge.type === "replaces" && present(edge.target)) supersededSet[text(edge.target)] = true;
+  });
+
+  function nodeSize(node) {
+    var statementCount = Array.isArray(node.statements) ? node.statements.length : 0;
+    var definitionLength = text(node.definition).length;
+    var score = statementCount * 18 + definitionLength;
+    return Math.max(24, Math.min(92, Math.round(24 + Math.sqrt(score) * 1.7)));
+  }
+
   function setupHeader() {
-    var title = META.title || "Knowledge Graph";
+    var title = text(META.title) || "Knowledge Graph";
     document.title = title;
-    var tEl = document.getElementById("kg-title");
-    if (tEl) tEl.textContent = title;
+    var titleEl = document.getElementById("kg-title");
+    if (titleEl) titleEl.textContent = title;
 
     var date = META.distillation_date || META.distilled || META.source_date || "";
     var subParts = [];
-    if (META.domain) subParts.push(esc(META.domain));
-    if (date) subParts.push("distilled " + esc(date));
+    if (present(META.domain)) subParts.push(text(META.domain));
+    if (present(date)) subParts.push("distilled " + text(date));
     var subEl = document.getElementById("kg-sub");
-    if (subEl) subEl.innerHTML = subParts.join(" &middot; ");
+    if (subEl) subEl.textContent = subParts.join(" · ");
 
-    var concepts = (META.concept_count != null) ? META.concept_count : NODES.length;
-    var rels = (META.relationship_count != null) ? META.relationship_count : EDGES.length;
-    var clus = (META.cluster_count != null) ? META.cluster_count : CLUSTERS.length;
-
-    var chips = [
-      chip(concepts, "concepts"),
-      chip(rels, "relationships"),
-      chip(clus, "clusters")
-    ];
-    if (META.quality_score != null) {
-      chips.push('<span class="chip quality"><b>' + esc(META.quality_score) + '</b> quality</span>');
-    }
+    var concepts = META.concept_count !== null && META.concept_count !== undefined
+      ? META.concept_count : NODES.length;
+    var relationships = META.relationship_count !== null && META.relationship_count !== undefined
+      ? META.relationship_count : EDGES.length;
+    var clusterCount = META.cluster_count !== null && META.cluster_count !== undefined
+      ? META.cluster_count : CLUSTERS.length;
     var chipsEl = document.getElementById("kg-chips");
-    if (chipsEl) chipsEl.innerHTML = chips.join("");
+    if (!chipsEl) return;
+    clear(chipsEl);
+    chipsEl.appendChild(chip(concepts, "concepts"));
+    chipsEl.appendChild(chip(relationships, "relationships"));
+    chipsEl.appendChild(chip(clusterCount, "clusters"));
+    var conformance = META.conformance_score !== null && META.conformance_score !== undefined
+      ? META.conformance_score : META.quality_score;
+    if (conformance !== null && conformance !== undefined) {
+      chipsEl.appendChild(chip(conformance, "conformance", true));
+    }
   }
-  function chip(n, label) {
-    return '<span class="chip"><b>' + esc(n) + "</b> " + esc(label) + "</span>";
+
+  function chip(value, label, highlighted) {
+    var item = element("span", "chip" + (highlighted ? " conformance" : ""));
+    item.appendChild(element("b", "", value));
+    item.appendChild(document.createTextNode(" " + label));
+    return item;
   }
 
-  /* ---------- cluster palette ---------- */
-  var PALETTE = [
-    "#4e79a7", "#f28e2b", "#e15759", "#76b7b2", "#59a14f",
-    "#edc948", "#b07aa1", "#ff9da7", "#9c755f", "#499894",
-    "#86bcb6", "#d37295", "#a0cbe8", "#8cd17d", "#b6992d"
-  ];
-  var DEFAULT_COLOR = "#9aa6b2";
-  var clusterColor = {};
-  var clusterById = {};
-  CLUSTERS.forEach(function (c, i) {
-    clusterColor[c.id] = PALETTE[i % PALETTE.length];
-    clusterById[c.id] = c;
-  });
-  function colorFor(cid) { return clusterColor[cid] || DEFAULT_COLOR; }
+  var svg = null;
+  var viewport = null;
+  var graphWidth = 900;
+  var graphHeight = 650;
+  var graphNodes = [];
+  var graphEdges = [];
+  var graphNodeById = Object.create(null);
+  var activeCluster = null;
+  var selectedId = null;
+  var query = "";
+  var view = { x: 0, y: 0, zoom: 1 };
+  var pointer = null;
 
-  /* ---------- node index + superseded detection ---------- */
-  var nodeById = {};
-  NODES.forEach(function (n) { nodeById[n.id] = n; });
+  function hash(value) {
+    var result = 2166136261;
+    var source = text(value);
+    for (var index = 0; index < source.length; index += 1) {
+      result ^= source.charCodeAt(index);
+      result = Math.imul(result, 16777619);
+    }
+    return result >>> 0;
+  }
 
-  var supersededSet = {};
-  NODES.forEach(function (n) {
-    var t = n.temporal || {};
-    if (val(t.valid_until)) supersededSet[n.id] = true;
-  });
-  EDGES.forEach(function (e) {
-    if (e.type === "replaces" && e.target) supersededSet[e.target] = true;
-  });
+  function layoutGraph() {
+    var count = graphNodes.length;
+    if (!count) return;
+    var centerX = graphWidth / 2;
+    var centerY = graphHeight / 2;
+    var clusterIds = Object.keys(clusterById);
+    var clusterCount = Math.max(1, clusterIds.length);
+    var clusterIndex = Object.create(null);
+    clusterIds.forEach(function (id, index) { clusterIndex[id] = index; });
 
-  /* ---------- content-based node size ---------- */
-  function nodeSize(n) {
-    var nStmt = Array.isArray(n.statements) ? n.statements.length : 0;
-    var defLen = (n.definition || "").length;
-    var score = nStmt * 18 + defLen; // "statements.length + definition.length"
-    var size = 24 + Math.sqrt(score) * 1.7; // base 24px + scaled
-    return Math.max(24, Math.min(92, Math.round(size)));
+    graphNodes.forEach(function (node, index) {
+      var cid = text(node.raw.cluster);
+      var cIndex = Object.prototype.hasOwnProperty.call(clusterIndex, cid)
+        ? clusterIndex[cid] : (hash(cid) % clusterCount);
+      var clusterAngle = (Math.PI * 2 * cIndex) / clusterCount - Math.PI / 2;
+      var clusterRadius = Math.min(graphWidth, graphHeight) * (clusterCount > 1 ? 0.24 : 0);
+      var jitterAngle = ((hash(node.id) % 10000) / 10000) * Math.PI * 2;
+      var jitterRadius = 30 + ((hash(node.id + ":radius") % 1000) / 1000) *
+        Math.min(150, Math.min(graphWidth, graphHeight) * 0.2);
+      node.x = centerX + Math.cos(clusterAngle) * clusterRadius + Math.cos(jitterAngle) * jitterRadius;
+      node.y = centerY + Math.sin(clusterAngle) * clusterRadius + Math.sin(jitterAngle) * jitterRadius;
+      if (count === 1) {
+        node.x = centerX;
+        node.y = centerY;
+      } else if (!clusterIds.length) {
+        var angle = (Math.PI * 2 * index) / count - Math.PI / 2;
+        node.x = centerX + Math.cos(angle) * Math.min(graphWidth, graphHeight) * 0.3;
+        node.y = centerY + Math.sin(angle) * Math.min(graphWidth, graphHeight) * 0.3;
+      }
+    });
+
+    if (count > 250) return;
+    var iterations = count > 120 ? 75 : 150;
+    var margin = 58;
+    for (var iteration = 0; iteration < iterations; iteration += 1) {
+      var forces = graphNodes.map(function () { return { x: 0, y: 0 }; });
+      for (var left = 0; left < count; left += 1) {
+        for (var right = left + 1; right < count; right += 1) {
+          var dx = graphNodes[right].x - graphNodes[left].x;
+          var dy = graphNodes[right].y - graphNodes[left].y;
+          var distanceSquared = Math.max(36, dx * dx + dy * dy);
+          var distance = Math.sqrt(distanceSquared);
+          var repulsion = Math.min(18, 7500 / distanceSquared);
+          var fx = (dx / distance) * repulsion;
+          var fy = (dy / distance) * repulsion;
+          forces[left].x -= fx;
+          forces[left].y -= fy;
+          forces[right].x += fx;
+          forces[right].y += fy;
+        }
+      }
+      graphEdges.forEach(function (edge) {
+        var source = edge.sourceNode;
+        var target = edge.targetNode;
+        var dx = target.x - source.x;
+        var dy = target.y - source.y;
+        var distance = Math.max(1, Math.sqrt(dx * dx + dy * dy));
+        var pull = (distance - 145) * 0.007;
+        var fx = (dx / distance) * pull;
+        var fy = (dy / distance) * pull;
+        forces[source.index].x += fx;
+        forces[source.index].y += fy;
+        forces[target.index].x -= fx;
+        forces[target.index].y -= fy;
+      });
+      graphNodes.forEach(function (node, index) {
+        forces[index].x += (centerX - node.x) * 0.0018;
+        forces[index].y += (centerY - node.y) * 0.0018;
+        var cooling = 1 - iteration / iterations;
+        node.x += Math.max(-12, Math.min(12, forces[index].x)) * cooling;
+        node.y += Math.max(-12, Math.min(12, forces[index].y)) * cooling;
+        node.x = Math.max(margin, Math.min(graphWidth - margin, node.x));
+        node.y = Math.max(margin, Math.min(graphHeight - margin, node.y));
+      });
+    }
+  }
+
+  function buildGraph() {
+    if (!cyEl) return;
+    clear(cyEl);
+    var bounds = cyEl.getBoundingClientRect();
+    graphWidth = Math.max(520, Math.round(bounds.width || 900));
+    graphHeight = Math.max(420, Math.round(bounds.height || 650));
+
+    svg = svgElement("svg", "graph-canvas");
+    svg.setAttribute("viewBox", "0 0 " + graphWidth + " " + graphHeight);
+    svg.setAttribute("role", "img");
+    svg.setAttribute("aria-label", "Interactive knowledge graph");
+    svg.setAttribute("tabindex", "0");
+
+    var defs = svgElement("defs");
+    var marker = svgElement("marker");
+    marker.setAttribute("id", "kd-arrow");
+    marker.setAttribute("viewBox", "0 0 10 10");
+    marker.setAttribute("refX", "9");
+    marker.setAttribute("refY", "5");
+    marker.setAttribute("markerWidth", "6");
+    marker.setAttribute("markerHeight", "6");
+    marker.setAttribute("orient", "auto-start-reverse");
+    marker.appendChild(svgElement("path"));
+    marker.firstChild.setAttribute("d", "M 0 0 L 10 5 L 0 10 z");
+    defs.appendChild(marker);
+    svg.appendChild(defs);
+
+    viewport = svgElement("g", "graph-viewport");
+    var edgeLayer = svgElement("g", "edge-layer");
+    var edgeLabelLayer = svgElement("g", "edge-label-layer");
+    var nodeLayer = svgElement("g", "node-layer");
+    viewport.appendChild(edgeLayer);
+    viewport.appendChild(edgeLabelLayer);
+    viewport.appendChild(nodeLayer);
+    svg.appendChild(viewport);
+    cyEl.appendChild(svg);
+
+    graphNodes = NODES.map(function (raw, index) {
+      var item = { id: text(raw.id), raw: raw, index: index, radius: nodeSize(raw) / 2 };
+      graphNodeById[item.id] = item;
+      return item;
+    });
+    graphEdges = EDGES.map(function (raw, index) {
+      var weight = typeof raw.weight === "number" && Number.isFinite(raw.weight) ? raw.weight : 0.5;
+      return {
+        raw: raw,
+        id: present(raw.id) ? text(raw.id) : "edge-" + index,
+        sourceNode: graphNodeById[text(raw.source)],
+        targetNode: graphNodeById[text(raw.target)],
+        width: 1 + Math.max(0, Math.min(1, weight)) * 4
+      };
+    }).filter(function (edge) { return edge.sourceNode && edge.targetNode; });
+
+    layoutGraph();
+
+    graphEdges.forEach(function (edge) {
+      var line = svgElement("line", "graph-edge" + (edge.raw.type === "tension" ? " tension" : ""));
+      line.setAttribute("stroke-width", edge.width);
+      if (edge.raw.type !== "tension") line.setAttribute("marker-end", "url(#kd-arrow)");
+      edge.line = line;
+      edgeLayer.appendChild(line);
+
+      if (present(edge.raw.type)) {
+        var label = svgElement("text", "edge-label");
+        label.textContent = text(edge.raw.type);
+        edge.label = label;
+        edgeLabelLayer.appendChild(label);
+      }
+    });
+
+    graphNodes.forEach(function (node) {
+      var group = svgElement("g", "graph-node" + (supersededSet[node.id] ? " superseded" : ""));
+      group.setAttribute("data-node-id", node.id);
+      group.setAttribute("role", "button");
+      group.setAttribute("tabindex", "0");
+      group.setAttribute("aria-label", text(node.raw.label) || node.id);
+
+      var circle = svgElement("circle", "node-circle");
+      circle.setAttribute("r", node.radius);
+      circle.setAttribute("fill", colorFor(node.raw.cluster));
+      group.appendChild(circle);
+
+      var label = svgElement("text", "node-label");
+      appendSvgLabel(label, text(node.raw.label) || node.id, node.radius);
+      group.appendChild(label);
+      node.group = group;
+      node.circle = circle;
+      node.label = label;
+      nodeLayer.appendChild(group);
+
+      group.addEventListener("keydown", function (event) {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          selectNode(node.id, true);
+        }
+      });
+    });
+
+    updateAllGeometry();
+    applyView();
+    updateGraphState();
+    installGraphInteraction();
+
+    if (!graphNodes.length) {
+      var empty = svgElement("text", "graph-empty");
+      empty.setAttribute("x", graphWidth / 2);
+      empty.setAttribute("y", graphHeight / 2);
+      empty.textContent = "No graph nodes available";
+      svg.appendChild(empty);
+    }
+  }
+
+  function appendSvgLabel(label, value, radius) {
+    var source = text(value).trim();
+    var maximum = radius < 24 ? 10 : 15;
+    var words = source.split(/\s+/).filter(Boolean);
+    var lines = [];
+    var current = "";
+    words.forEach(function (word) {
+      if (!current) current = word;
+      else if ((current + " " + word).length <= maximum) current += " " + word;
+      else {
+        lines.push(current);
+        current = word;
+      }
+    });
+    if (current) lines.push(current);
+    if (!lines.length) lines.push("");
+    if (lines.length > 3) {
+      lines = lines.slice(0, 3);
+      lines[2] = lines[2].slice(0, Math.max(1, maximum - 1)) + "…";
+    }
+    lines.forEach(function (line, index) {
+      var span = svgElement("tspan");
+      span.setAttribute("x", "0");
+      span.setAttribute("dy", index ? "1.05em" : String(-0.5 * (lines.length - 1)) + "em");
+      span.textContent = line;
+      label.appendChild(span);
+    });
+  }
+
+  function updateAllGeometry() {
+    graphNodes.forEach(updateNodeGeometry);
+    graphEdges.forEach(updateEdgeGeometry);
+  }
+
+  function updateNodeGeometry(node) {
+    if (node.group) node.group.setAttribute("transform", "translate(" + node.x + " " + node.y + ")");
+  }
+
+  function edgeEndpoint(source, target, radius) {
+    var dx = target.x - source.x;
+    var dy = target.y - source.y;
+    var distance = Math.max(1, Math.sqrt(dx * dx + dy * dy));
+    return { x: source.x + dx / distance * radius, y: source.y + dy / distance * radius };
+  }
+
+  function updateEdgeGeometry(edge) {
+    var start = edgeEndpoint(edge.sourceNode, edge.targetNode, edge.sourceNode.radius + 2);
+    var end = edgeEndpoint(edge.targetNode, edge.sourceNode, edge.targetNode.radius + 8);
+    edge.line.setAttribute("x1", start.x);
+    edge.line.setAttribute("y1", start.y);
+    edge.line.setAttribute("x2", end.x);
+    edge.line.setAttribute("y2", end.y);
+    if (edge.label) {
+      edge.label.setAttribute("x", (start.x + end.x) / 2);
+      edge.label.setAttribute("y", (start.y + end.y) / 2 - 4);
+    }
+  }
+
+  function updateIncidentEdges(node) {
+    graphEdges.forEach(function (edge) {
+      if (edge.sourceNode === node || edge.targetNode === node) updateEdgeGeometry(edge);
+    });
+  }
+
+  function applyView() {
+    if (viewport) viewport.setAttribute("transform", "translate(" + view.x + " " + view.y + ") scale(" + view.zoom + ")");
+  }
+
+  function svgPoint(clientX, clientY) {
+    var bounds = svg.getBoundingClientRect();
+    return {
+      x: (clientX - bounds.left) * graphWidth / Math.max(1, bounds.width),
+      y: (clientY - bounds.top) * graphHeight / Math.max(1, bounds.height)
+    };
+  }
+
+  function graphPoint(clientX, clientY) {
+    var point = svgPoint(clientX, clientY);
+    return { x: (point.x - view.x) / view.zoom, y: (point.y - view.y) / view.zoom };
+  }
+
+  function installGraphInteraction() {
+    svg.addEventListener("pointerdown", function (event) {
+      if (event.button !== 0) return;
+      var group = event.target.closest ? event.target.closest(".graph-node") : null;
+      var node = group ? graphNodeById[group.getAttribute("data-node-id")] : null;
+      pointer = {
+        mode: node ? "node" : "pan",
+        node: node,
+        id: event.pointerId,
+        startClientX: event.clientX,
+        startClientY: event.clientY,
+        lastClientX: event.clientX,
+        lastClientY: event.clientY,
+        moved: false
+      };
+      svg.setPointerCapture(event.pointerId);
+      if (node) node.group.classList.add("dragging");
+    });
+
+    svg.addEventListener("pointermove", function (event) {
+      if (!pointer || pointer.id !== event.pointerId) return;
+      if (Math.abs(event.clientX - pointer.startClientX) > 3 ||
+          Math.abs(event.clientY - pointer.startClientY) > 3) pointer.moved = true;
+      if (pointer.mode === "node") {
+        var point = graphPoint(event.clientX, event.clientY);
+        pointer.node.x = point.x;
+        pointer.node.y = point.y;
+        updateNodeGeometry(pointer.node);
+        updateIncidentEdges(pointer.node);
+      } else {
+        var bounds = svg.getBoundingClientRect();
+        view.x += (event.clientX - pointer.lastClientX) * graphWidth / Math.max(1, bounds.width);
+        view.y += (event.clientY - pointer.lastClientY) * graphHeight / Math.max(1, bounds.height);
+        applyView();
+      }
+      pointer.lastClientX = event.clientX;
+      pointer.lastClientY = event.clientY;
+    });
+
+    function endPointer(event) {
+      if (!pointer || pointer.id !== event.pointerId) return;
+      var state = pointer;
+      pointer = null;
+      if (state.node) state.node.group.classList.remove("dragging");
+      if (svg.hasPointerCapture(event.pointerId)) svg.releasePointerCapture(event.pointerId);
+      if (!state.moved && state.node) selectNode(state.node.id, false);
+      else if (!state.moved && state.mode === "pan") {
+        selectedId = null;
+        updateGraphState();
+        renderOverview();
+      }
+    }
+    svg.addEventListener("pointerup", endPointer);
+    svg.addEventListener("pointercancel", endPointer);
+
+    svg.addEventListener("wheel", function (event) {
+      event.preventDefault();
+      var point = svgPoint(event.clientX, event.clientY);
+      var oldZoom = view.zoom;
+      var newZoom = Math.max(0.45, Math.min(3.5, oldZoom * Math.exp(-event.deltaY * 0.001)));
+      var graphX = (point.x - view.x) / oldZoom;
+      var graphY = (point.y - view.y) / oldZoom;
+      view.x = point.x - graphX * newZoom;
+      view.y = point.y - graphY * newZoom;
+      view.zoom = newZoom;
+      applyView();
+    }, { passive: false });
+  }
+
+  function updateGraphState() {
+    var lowerQuery = query.trim().toLowerCase();
+    graphNodes.forEach(function (node) {
+      var haystack = (text(node.raw.label) + " " + text(node.raw.definition)).toLowerCase();
+      node.hidden = Boolean(lowerQuery && haystack.indexOf(lowerQuery) === -1);
+      node.group.classList.toggle("is-hidden", node.hidden);
+      node.group.classList.toggle("is-dim", Boolean(activeCluster && text(node.raw.cluster) !== activeCluster));
+      node.group.classList.toggle("is-selected", selectedId === node.id);
+      node.group.setAttribute("aria-pressed", selectedId === node.id ? "true" : "false");
+    });
+    graphEdges.forEach(function (edge) {
+      var hidden = edge.sourceNode.hidden || edge.targetNode.hidden;
+      var connected = !activeCluster || text(edge.sourceNode.raw.cluster) === activeCluster ||
+        text(edge.targetNode.raw.cluster) === activeCluster;
+      edge.line.classList.toggle("is-hidden", hidden);
+      edge.line.classList.toggle("is-dim", !connected);
+      if (edge.label) {
+        edge.label.classList.toggle("is-hidden", hidden);
+        edge.label.classList.toggle("is-dim", !connected);
+      }
+    });
+  }
+
+  function buildLegend() {
+    if (!legendEl) return;
+    clear(legendEl);
+    if (!CLUSTERS.length) {
+      legendEl.hidden = true;
+      return;
+    }
+    legendEl.hidden = false;
+    legendEl.appendChild(element("div", "legend-title", "Clusters · click to focus"));
+    CLUSTERS.forEach(function (cluster) {
+      if (!present(cluster.id)) return;
+      var cid = text(cluster.id);
+      var item = element("button", "legend-item");
+      item.type = "button";
+      item.setAttribute("data-cluster", cid);
+      item.setAttribute("aria-pressed", "false");
+      var swatch = element("span", "legend-swatch");
+      swatch.style.backgroundColor = colorFor(cid);
+      item.appendChild(swatch);
+      item.appendChild(element("span", "", clusterLabel(cluster)));
+      item.addEventListener("click", function () {
+        toggleCluster(cid === activeCluster ? null : cid);
+      });
+      legendEl.appendChild(item);
+    });
+  }
+
+  function toggleCluster(clusterId) {
+    activeCluster = clusterId;
+    if (legendEl) {
+      legendEl.querySelectorAll(".legend-item").forEach(function (item) {
+        var active = item.getAttribute("data-cluster") === activeCluster;
+        item.classList.toggle("active", active);
+        item.setAttribute("aria-pressed", active ? "true" : "false");
+      });
+    }
+    updateGraphState();
+  }
+
+  function selectNode(id, center) {
+    var node = graphNodeById[text(id)];
+    if (!node) return;
+    selectedId = node.id;
+    if (center) {
+      view.zoom = Math.max(1, view.zoom);
+      view.x = graphWidth / 2 - node.x * view.zoom;
+      view.y = graphHeight / 2 - node.y * view.zoom;
+      applyView();
+    }
+    updateGraphState();
+    renderDetail(node.raw);
+  }
+
+  window.__kgSelect = function (id) { selectNode(id, true); };
+
+  function sectionLabel(parent, label) {
+    parent.appendChild(element("div", "section-label", label));
+  }
+
+  function confidenceClass(value) {
+    var normalized = text(value).toLowerCase();
+    return normalized === "high" || normalized === "medium" || normalized === "low"
+      ? " conf-" + normalized : "";
+  }
+
+  function appendTemporal(parent, temporal) {
+    if (!isRecord(temporal)) return;
+    var hasSource = present(temporal.source_date);
+    var hasValidity = present(temporal.valid_from) || present(temporal.valid_until);
+    var hasConfidence = present(temporal.temporal_confidence);
+    if (!hasSource && !hasValidity && !hasConfidence) return;
+    var line = element("div", "temporal-line");
+    line.appendChild(document.createTextNode("◷ "));
+    var needsSeparator = false;
+    function separator() {
+      if (needsSeparator) line.appendChild(document.createTextNode(" · "));
+      needsSeparator = true;
+    }
+    if (hasSource) {
+      separator();
+      line.appendChild(document.createTextNode("source "));
+      line.appendChild(element("code", "", temporal.source_date));
+    }
+    if (hasValidity) {
+      separator();
+      line.appendChild(document.createTextNode("valid "));
+      line.appendChild(element("code", "", text(temporal.valid_from) || "?"));
+      line.appendChild(document.createTextNode(" → "));
+      line.appendChild(element("code", "", text(temporal.valid_until) || "now"));
+    }
+    if (hasConfidence) {
+      separator();
+      line.appendChild(document.createTextNode("(" + text(temporal.temporal_confidence) + ")"));
+    }
+    parent.appendChild(line);
+  }
+
+  function renderDetail(node) {
+    if (!detailEl || !isRecord(node)) {
+      renderOverview();
+      return;
+    }
+    clear(detailEl);
+    detailEl.appendChild(element("h2", "", node.label || node.id));
+
+    var meta = element("div", "meta-row");
+    var cluster = clusterById[text(node.cluster)];
+    if (cluster) {
+      var clusterBadge = element("span", "badge cluster", clusterLabel(cluster));
+      clusterBadge.style.backgroundColor = colorFor(node.cluster);
+      meta.appendChild(clusterBadge);
+    }
+    if (present(node.confidence)) {
+      meta.appendChild(element("span", "badge" + confidenceClass(node.confidence),
+        text(node.confidence) + " confidence"));
+    }
+    if (supersededSet[text(node.id)]) meta.appendChild(element("span", "badge superseded", "⚠ superseded"));
+    if (meta.childNodes.length) detailEl.appendChild(meta);
+
+    appendTemporal(detailEl, node.temporal);
+
+    if (present(node.definition)) {
+      sectionLabel(detailEl, "Definition");
+      var definition = element("div", "detail-md");
+      appendMarkdown(definition, node.definition);
+      detailEl.appendChild(definition);
+    }
+    if (present(node.relevance)) {
+      sectionLabel(detailEl, "Relevance");
+      var relevance = element("div", "detail-md");
+      appendMarkdown(relevance, node.relevance);
+      detailEl.appendChild(relevance);
+    }
+
+    if (Array.isArray(node.statements) && node.statements.length) {
+      sectionLabel(detailEl, "Statements");
+      var statementWrap = element("div", "detail-md");
+      var statements = element("ul");
+      node.statements.forEach(function (statement) {
+        var item = element("li");
+        appendInlineMarkdown(item, statement);
+        statements.appendChild(item);
+      });
+      statementWrap.appendChild(statements);
+      detailEl.appendChild(statementWrap);
+    }
+
+    var citations = records(node.citations);
+    if (citations.length) {
+      sectionLabel(detailEl, "Citations");
+      var citationList = element("ul", "cite-list");
+      citations.forEach(function (citation) {
+        var item = element("li");
+        item.appendChild(element("span", "cn", "[" + (present(citation.n) ? text(citation.n) : "?") + "]"));
+        item.appendChild(externalLink(citation.label || citation.source || "", citation.url));
+        if (present(citation.locator)) item.appendChild(document.createTextNode(" (" + text(citation.locator) + ")"));
+        citationList.appendChild(item);
+      });
+      detailEl.appendChild(citationList);
+    }
+
+    appendNodeRelationships(detailEl, "Cited by", function (edge) {
+      return text(edge.target) === text(node.id) ? nodeById[text(edge.source)] : null;
+    });
+    appendNodeRelationships(detailEl, "Outgoing", function (edge) {
+      return text(edge.source) === text(node.id) ? nodeById[text(edge.target)] : null;
+    });
+  }
+
+  function appendNodeRelationships(parent, label, resolve) {
+    var relationships = [];
+    EDGES.forEach(function (edge) {
+      var related = resolve(edge);
+      if (related) relationships.push({ edge: edge, node: related });
+    });
+    if (!relationships.length) return;
+    sectionLabel(parent, label);
+    var list = element("ul", "link-list");
+    relationships.forEach(function (relationship) {
+      var item = element("li");
+      if (present(relationship.edge.type)) {
+        item.appendChild(element("span", "edge-type", relationship.edge.type));
+      }
+      var button = element("button", "node-link", relationship.node.label || relationship.node.id);
+      button.type = "button";
+      button.addEventListener("click", function () { selectNode(relationship.node.id, true); });
+      item.appendChild(button);
+      list.appendChild(item);
+    });
+    parent.appendChild(list);
+  }
+
+  function renderOverview() {
+    if (!detailEl) return;
+    clear(detailEl);
+    detailEl.appendChild(element("h2", "", "Overview"));
+    detailEl.appendChild(element("div", "pane-hint",
+      "Click any node to inspect it. Use the legend to focus a cluster, or the search box to filter."));
+
+    if (FACTS.length) {
+      sectionLabel(detailEl, "Key facts");
+      var table = element("table", "facts-table");
+      var thead = element("thead");
+      var header = element("tr");
+      ["Statement", "Value", "Conf."].forEach(function (label) { header.appendChild(element("th", "", label)); });
+      thead.appendChild(header);
+      table.appendChild(thead);
+      var tbody = element("tbody");
+      FACTS.forEach(function (fact) {
+        var row = element("tr");
+        row.appendChild(element("td", "", fact.statement || fact.fact || ""));
+        row.appendChild(element("td", "v", fact.value));
+        row.appendChild(element("td", "", fact.confidence));
+        tbody.appendChild(row);
+      });
+      table.appendChild(tbody);
+      detailEl.appendChild(table);
+    }
+
+    if (OPEN_Q.length) {
+      sectionLabel(detailEl, "Open questions");
+      var questions = element("ol", "oq-list");
+      OPEN_Q.forEach(function (question) {
+        var value = typeof question === "string" ? question
+          : (isRecord(question) ? (question.question || question.text || "") : "");
+        questions.appendChild(element("li", "", value));
+      });
+      detailEl.appendChild(questions);
+    }
+
+    if (!FACTS.length && !OPEN_Q.length) {
+      detailEl.appendChild(element("p", "empty", "No facts or open questions in this graph."));
+    }
+  }
+
+  if (searchEl) {
+    searchEl.addEventListener("input", function () {
+      query = text(searchEl.value);
+      updateGraphState();
+    });
   }
 
   setupHeader();
   renderOverview();
-
-  /* ---------- guard: cytoscape must have loaded from CDN ---------- */
-  if (typeof window.cytoscape === "undefined") {
-    if (cyEl) {
-      cyEl.innerHTML =
-        '<div class="load-error"><b>&#9888;&#65039; Could not load Cytoscape</b>' +
-        "This viewer needs internet for the CDN libs (cytoscape + marked).<br>" +
-        "Reopen the file while online to see the interactive graph.<br>" +
-        "Metadata, facts and open questions are still shown on the right.</div>";
-    }
-    return;
-  }
-
   buildGraph();
-
-  /* ===================================================================== */
-  /* GRAPH                                                                  */
-  /* ===================================================================== */
-  var cy = null;
-  var activeCluster = null;
-
-  function buildGraph() {
-    var elements = [];
-
-    NODES.forEach(function (n) {
-      elements.push({
-        data: {
-          id: n.id,
-          label: n.label || n.id,
-          cluster: n.cluster || "",
-          definition: n.definition || "",
-          color: colorFor(n.cluster),
-          size: nodeSize(n),
-          raw: n
-        },
-        classes: supersededSet[n.id] ? "superseded" : ""
-      });
-    });
-
-    EDGES.forEach(function (e, i) {
-      if (!nodeById[e.source] || !nodeById[e.target]) return; // skip dangling
-      var weight = (typeof e.weight === "number") ? e.weight : 0.5;
-      elements.push({
-        data: {
-          id: e.id || ("e" + i),
-          source: e.source,
-          target: e.target,
-          type: e.type || "",
-          width: 1 + Math.max(0, Math.min(1, weight)) * 4,
-          raw: e
-        },
-        classes: e.type === "tension" ? "tension" : ""
-      });
-    });
-
-    cy = cytoscape({
-      container: cyEl,
-      elements: elements,
-      wheelSensitivity: 0.25,
-      style: graphStyle(),
-      layout: {
-        name: "cose",
-        animate: false,
-        padding: 40,
-        nodeRepulsion: 9000,
-        idealEdgeLength: 130,
-        nodeOverlap: 14,
-        gravity: 0.5,
-        nestingFactor: 0.9,
-        componentSpacing: 90
-      }
-    });
-
-    cy.on("tap", "node", function (evt) { selectNode(evt.target.id()); });
-    cy.on("tap", function (evt) {
-      if (evt.target === cy) {
-        cy.$(":selected").unselect();
-        renderOverview();
-      }
-    });
-
-    buildLegend();
-  }
-
-  function graphStyle() {
-    return [
-      {
-        selector: "node",
-        style: {
-          "background-color": "data(color)",
-          "width": "data(size)",
-          "height": "data(size)",
-          "label": "data(label)",
-          "font-size": 11,
-          "color": "#15202b",
-          "text-outline-color": "#ffffff",
-          "text-outline-width": 2,
-          "text-valign": "center",
-          "text-halign": "center",
-          "text-wrap": "wrap",
-          "text-max-width": 96,
-          "border-width": 1.5,
-          "border-color": "rgba(0,0,0,0.18)"
-        }
-      },
-      {
-        selector: "node.superseded",
-        style: {
-          "background-color": "#c2c9d1",
-          "opacity": 0.55,
-          "color": "#7a838d",
-          "border-style": "dashed"
-        }
-      },
-      {
-        selector: "node:selected",
-        style: {
-          "border-width": 4,
-          "border-color": "#2f6fed",
-          "text-outline-width": 3
-        }
-      },
-      {
-        selector: "edge",
-        style: {
-          "width": "data(width)",
-          "label": "data(type)",
-          "font-size": 9,
-          "color": "#5a6672",
-          "text-background-color": "#ffffff",
-          "text-background-opacity": 0.85,
-          "text-background-shape": "roundrectangle",
-          "text-background-padding": 1,
-          "curve-style": "bezier",
-          "line-color": "#c2cad3",
-          "target-arrow-color": "#aab4bf",
-          "target-arrow-shape": "triangle",
-          "arrow-scale": 0.9,
-          "opacity": 0.85
-        }
-      },
-      {
-        selector: "edge.tension",
-        style: {
-          "line-style": "dashed",
-          "line-color": "#e15759",
-          "target-arrow-shape": "none",
-          "source-arrow-shape": "none",
-          "color": "#b23b3b"
-        }
-      },
-      {
-        selector: "edge:selected",
-        style: { "line-color": "#2f6fed", "target-arrow-color": "#2f6fed", "opacity": 1 }
-      },
-      { selector: ".hidden", style: { "display": "none" } },
-      { selector: ".cl-dim", style: { "opacity": 0.12 } },
-      { selector: "node.cl-hi", style: { "opacity": 1 } }
-    ];
-  }
-
-  /* ---------- legend ---------- */
-  function buildLegend() {
-    if (!legendEl) return;
-    if (!CLUSTERS.length) { legendEl.style.display = "none"; return; }
-    var html = '<div class="legend-title">Clusters &middot; click to focus</div>';
-    CLUSTERS.forEach(function (c) {
-      html += '<div class="legend-item" data-cluster="' + esc(c.id) + '">' +
-        '<span class="legend-swatch" style="background:' + colorFor(c.id) + '"></span>' +
-        "<span>" + esc(clusterLabel(c)) + "</span></div>";
-    });
-    legendEl.innerHTML = html;
-    legendEl.querySelectorAll(".legend-item").forEach(function (item) {
-      item.addEventListener("click", function () {
-        var cid = item.getAttribute("data-cluster");
-        toggleCluster(cid === activeCluster ? null : cid);
-      });
-    });
-  }
-
-  function toggleCluster(cid) {
-    activeCluster = cid;
-    legendEl.querySelectorAll(".legend-item").forEach(function (it) {
-      it.classList.toggle("active", it.getAttribute("data-cluster") === cid);
-    });
-    if (!cy) return;
-    cy.batch(function () {
-      cy.elements().removeClass("cl-dim cl-hi");
-      if (!cid) return;
-      var inSet = cy.nodes('[cluster = "' + cid + '"]');
-      cy.nodes().not(inSet).addClass("cl-dim");
-      inSet.addClass("cl-hi");
-      var keepEdges = inSet.connectedEdges();
-      cy.edges().not(keepEdges).addClass("cl-dim");
-    });
-  }
-
-  /* ---------- selection ---------- */
-  function selectNode(id) {
-    if (!cy) return;
-    var n = cy.$id(id);
-    if (!n || !n.length) return;
-    cy.$(":selected").unselect();
-    n.select();
-    cy.animate({ center: { eles: n }, zoom: Math.max(cy.zoom(), 1) }, { duration: 320 });
-    renderDetail(n.data("raw"));
-  }
-  // expose for inline link handlers
-  window.__kgSelect = selectNode;
-
-  /* ===================================================================== */
-  /* DETAIL PANE                                                            */
-  /* ===================================================================== */
-  function temporalLine(t) {
-    if (!t) return "";
-    var parts = [];
-    if (val(t.source_date)) parts.push("source <code>" + esc(t.source_date) + "</code>");
-    if (val(t.valid_from) || val(t.valid_until)) {
-      parts.push("valid <code>" + esc(t.valid_from || "?") + "</code> &rarr; <code>" +
-        esc(t.valid_until || "now") + "</code>");
-    }
-    if (val(t.temporal_confidence)) parts.push("(" + esc(t.temporal_confidence) + ")");
-    if (!parts.length) return "";
-    return '<div class="temporal-line">&#128336; ' + parts.join(" &middot; ") + "</div>";
-  }
-
-  function renderDetail(n) {
-    if (!n) { renderOverview(); return; }
-    var html = "";
-    html += "<h2>" + esc(n.label || n.id) + "</h2>";
-
-    var c = clusterById[n.cluster];
-    html += '<div class="meta-row">';
-    if (c) {
-      html += '<span class="badge cluster" style="--cluster-bg:' + colorFor(n.cluster) +
-        ";background:" + colorFor(n.cluster) + '">' + esc(clusterLabel(c)) + "</span>";
-    }
-    if (n.confidence) {
-      html += '<span class="badge conf-' + esc(n.confidence) + '">' + esc(n.confidence) + " confidence</span>";
-    }
-    if (supersededSet[n.id]) {
-      html += '<span class="badge superseded">&#9888; superseded</span>';
-    }
-    html += "</div>";
-
-    html += temporalLine(n.temporal);
-
-    if (val(n.definition)) {
-      html += '<div class="section-label">Definition</div><div class="detail-md">' + md(n.definition) + "</div>";
-    }
-    if (val(n.relevance)) {
-      html += '<div class="section-label">Relevance</div><div class="detail-md">' + md(n.relevance) + "</div>";
-    }
-
-    if (Array.isArray(n.statements) && n.statements.length) {
-      html += '<div class="section-label">Statements</div><div class="detail-md"><ul>';
-      n.statements.forEach(function (s) {
-        var inner = md(s).replace(/^\s*<p>/, "").replace(/<\/p>\s*$/, "");
-        html += "<li>" + inner + "</li>";
-      });
-      html += "</ul></div>";
-    }
-
-    if (Array.isArray(n.citations) && n.citations.length) {
-      html += '<div class="section-label">Citations</div><ul class="cite-list">';
-      n.citations.forEach(function (ci) {
-        var txt = esc(ci.label || ci.source || "");
-        var loc = ci.locator ? " (" + esc(ci.locator) + ")" : "";
-        var body = ci.url
-          ? '<a href="' + esc(ci.url) + '" target="_blank" rel="noopener">' + txt + "</a>"
-          : txt;
-        html += '<li><span class="cn">[' + esc(ci.n != null ? ci.n : "?") + "]</span>" + body + loc + "</li>";
-      });
-      html += "</ul>";
-    }
-
-    // Cited by (edges targeting this node)
-    var citedBy = EDGES.filter(function (e) { return e.target === n.id && nodeById[e.source]; });
-    if (citedBy.length) {
-      html += '<div class="section-label">Cited by</div><ul class="link-list">';
-      citedBy.forEach(function (e) {
-        var src = nodeById[e.source];
-        html += "<li>" + edgeBadge(e.type) + nodeLink(src) + "</li>";
-      });
-      html += "</ul>";
-    }
-
-    // Outgoing (edges from this node)
-    var outgoing = EDGES.filter(function (e) { return e.source === n.id && nodeById[e.target]; });
-    if (outgoing.length) {
-      html += '<div class="section-label">Outgoing</div><ul class="link-list">';
-      outgoing.forEach(function (e) {
-        var tgt = nodeById[e.target];
-        html += "<li>" + edgeBadge(e.type) + nodeLink(tgt) + "</li>";
-      });
-      html += "</ul>";
-    }
-
-    detailEl.innerHTML = html;
-    wireNodeLinks();
-  }
-
-  function edgeBadge(type) {
-    return type ? '<span class="edge-type">' + esc(type) + "</span>" : "";
-  }
-  function nodeLink(n) {
-    return '<a class="node-link" data-node="' + esc(n.id) + '">' + esc(n.label || n.id) + "</a>";
-  }
-  function wireNodeLinks() {
-    detailEl.querySelectorAll(".node-link").forEach(function (a) {
-      a.addEventListener("click", function () { selectNode(a.getAttribute("data-node")); });
-    });
-  }
-
-  /* ===================================================================== */
-  /* OVERVIEW (no node selected): facts + open questions                   */
-  /* ===================================================================== */
-  function renderOverview() {
-    var html = '<h2>Overview</h2><div class="pane-hint">Click any node to inspect it. ' +
-      "Use the legend to focus a cluster, or the search box to filter.</div>";
-
-    if (FACTS.length) {
-      html += '<div class="section-label">Key facts</div>';
-      html += '<table class="facts-table"><thead><tr><th>Statement</th><th>Value</th><th>Conf.</th></tr></thead><tbody>';
-      FACTS.forEach(function (f) {
-        var stmt = f.statement || f.fact || "";
-        html += "<tr><td>" + esc(stmt) + '</td><td class="v">' + esc(f.value || "") +
-          "</td><td>" + esc(f.confidence || "") + "</td></tr>";
-      });
-      html += "</tbody></table>";
-    }
-
-    if (OPEN_Q.length) {
-      html += '<div class="section-label">Open questions</div><ol class="oq-list">';
-      OPEN_Q.forEach(function (q) {
-        var t = (typeof q === "string") ? q : (q && (q.question || q.text)) || "";
-        html += "<li>" + esc(t) + "</li>";
-      });
-      html += "</ol>";
-    }
-
-    if (!FACTS.length && !OPEN_Q.length) {
-      html += '<p class="empty">No facts or open questions in this graph.</p>';
-    }
-    detailEl.innerHTML = html;
-  }
-
-  /* ===================================================================== */
-  /* SEARCH                                                                 */
-  /* ===================================================================== */
-  var searchEl = document.getElementById("search");
-  if (searchEl) {
-    searchEl.addEventListener("input", function () { applySearch(searchEl.value); });
-  }
-  function applySearch(q) {
-    if (!cy) return;
-    q = (q || "").trim().toLowerCase();
-    cy.batch(function () {
-      if (!q) { cy.elements().removeClass("hidden"); return; }
-      cy.nodes().forEach(function (nd) {
-        var hay = ((nd.data("label") || "") + " " + (nd.data("definition") || "")).toLowerCase();
-        nd.toggleClass("hidden", hay.indexOf(q) === -1);
-      });
-      cy.edges().forEach(function (e) {
-        e.toggleClass("hidden", e.source().hasClass("hidden") || e.target().hasClass("hidden"));
-      });
-    });
-  }
+  buildLegend();
 })();
 
   </script>

@@ -1,9 +1,10 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://knowledge-distiller.dev/schema/knowledge.schema.json",
-  "title": "Knowledge Distiller .knowledge.json (v4.0, spec 1.0)",
-  "description": "Machine-checkable contract for the Knowledge Distiller graph output. Producers MUST emit conforming documents; consumers SHOULD be permissive (tolerate unknown extra keys, unknown distiller_spec_version, missing optional fields, and broken cross-links) per SPEC.md §9.",
+  "title": "Knowledge Distiller .knowledge.json (v4.0, spec 1.1)",
+  "description": "Machine-checkable JSON Schema 2020-12 mirror for the Knowledge Distiller graph output. It covers structural and cross-field rules that the standard can express. The dependency-free core validator remains authoritative for cross-record resolution, derived-field equality, payload monotonicity, sibling numeric comparisons, fully normalized private-key detection, and parsed credential-query checks. Producers MUST satisfy both; consumers SHOULD be permissive (tolerate unknown extra keys, unknown distiller_spec_version, missing optional fields, and broken cross-links) per SPEC.md §9.",
   "type": "object",
+  "allOf": [{"$ref": "#/$defs/noPrivateReasoning"}],
   "required": ["metadata", "clusters", "nodes", "edges"],
   "properties": {
     "@context": {
@@ -42,6 +43,7 @@
         "depth": {"enum": ["quick", "standard", "deep"]},
         "mode": {"enum": ["fresh", "merge", "batch"]},
         "quality_score": {"type": "integer", "minimum": 0, "maximum": 100},
+        "conformance_score": {"type": "integer", "minimum": 0, "maximum": 100},
         "temporal_confidence": {"$ref": "#/$defs/temporalConfidence"},
         "concept_count": {"type": "integer", "minimum": 0},
         "relationship_count": {"type": "integer", "minimum": 0},
@@ -72,9 +74,93 @@
     "open_questions": {
       "type": "array",
       "items": {"type": "string"}
+    },
+    "evidence": {
+      "description": "Reusable, locator-precise evidence records. Evidence describes support, not truth.",
+      "type": "array",
+      "items": {"$ref": "#/$defs/evidence"}
+    },
+    "claims": {
+      "description": "Optional first-class, stable claims. nodes[].statements remains the compatible projection.",
+      "type": "array",
+      "items": {"$ref": "#/$defs/claim"}
+    },
+    "assessments": {
+      "description": "Purpose-bound assessments with their own provenance; never an intrinsic source-authority score.",
+      "type": "array",
+      "items": {"$ref": "#/$defs/assessment"}
+    },
+    "fact_conflicts": {
+      "description": "Explicit, non-destructive relationships between retained facts.",
+      "type": "array",
+      "items": {"$ref": "#/$defs/factConflict"}
     }
   },
   "$defs": {
+    "privateFieldName": {
+      "description": "Portable case-insensitive mirror for private reasoning/scratchpad names and common whole-word camelCase, snake_case, kebab-case, dotted and spaced variants. JSON Schema cannot normalize arbitrarily inserted separators inside a token (for example c.o.t); the core validator removes every non-ASCII-alphanumeric separator before comparison and remains authoritative for that wider class.",
+      "type": "string",
+      "pattern": "^(?:[Rr][Ee][Aa][Ss][Oo][Nn][Ii][Nn][Gg](?:[^A-Za-z0-9]*[Tt][Rr][Aa][Cc][Ee])?|[Cc][Hh][Aa][Ii][Nn][^A-Za-z0-9]*[Oo][Ff][^A-Za-z0-9]*[Tt][Hh][Oo][Uu][Gg][Hh][Tt](?:[^A-Za-z0-9]*[Tt][Rr][Aa][Cc][Ee])?|(?:[Hh][Ii][Dd][Dd][Ee][Nn]|[Ii][Nn][Tt][Ee][Rr][Nn][Aa][Ll]|[Pp][Rr][Ii][Vv][Aa][Tt][Ee])[^A-Za-z0-9]*(?:[Rr][Ee][Aa][Ss][Oo][Nn][Ii][Nn][Gg]|[Ss][Cc][Rr][Aa][Tt][Cc][Hh][Pp][Aa][Dd])|[Hh][Ii][Dd][Dd][Ee][Nn][^A-Za-z0-9]*[Tt][Hh][Oo][Uu][Gg][Hh][Tt][Ss]|[Ss][Cc][Rr][Aa][Tt][Cc][Hh][Pp][Aa][Dd]|[Cc][Oo][Tt])$"
+    },
+    "noPrivateReasoning": {
+      "description": "Recursively forbids portable private chain-of-thought and scratchpad field-name variants while retaining forward-compatible extension objects.",
+      "if": {"type": "object"},
+      "then": {
+        "propertyNames": {
+          "not": {"$ref": "#/$defs/privateFieldName"}
+        },
+        "additionalProperties": {"$ref": "#/$defs/noPrivateReasoning"}
+      },
+      "else": {
+        "if": {"type": "array"},
+        "then": {"items": {"$ref": "#/$defs/noPrivateReasoning"}}
+      }
+    },
+    "safeLinkUri": {
+      "description": "HTTP(S) link without literal userinfo or leading/trailing/control whitespace. Percent-decoded and separator-normalized credential query names are intentionally checked by the core validator because JSON Schema cannot parse query pairs reliably.",
+      "type": "string",
+      "format": "uri",
+      "allOf": [
+        {"pattern": "^[Hh][Tt][Tt][Pp][Ss]?://[^/?#@\\s]+(?:[/?#]|$)"},
+        {"pattern": "^[^\\u0000-\\u001F\\u007F]*\\S$"}
+      ]
+    },
+    "safeIdentifierUri": {
+      "description": "Stable identifier using HTTP(S), URN, ISO or Wikidata schemes. HTTP(S) identifiers use the same authority/userinfo guard as links; parsed credential queries remain a core-only check.",
+      "anyOf": [
+        {"$ref": "#/$defs/safeLinkUri"},
+        {
+          "type": "string",
+          "format": "uri",
+          "allOf": [
+            {"pattern": "^(?:[Uu][Rr][Nn]|[Ii][Ss][Oo]|[Ww][Ii][Kk][Ii][Dd][Aa][Tt][Aa]):"},
+            {"pattern": "^[^\\u0000-\\u001F\\u007F]*\\S$"}
+          ]
+        }
+      ]
+    },
+    "originatedConditions": {
+      "description": "Cross-field provenance conditions shared by claims, edges, facts and chunks.",
+      "allOf": [
+        {
+          "if": {
+            "required": ["origin"],
+            "properties": {"origin": {"enum": ["source_stated", "paraphrased"]}}
+          },
+          "then": {
+            "required": ["evidence"],
+            "properties": {"evidence": {"type": "array", "minItems": 1}}
+          }
+        },
+        {
+          "if": {
+            "required": ["origin"],
+            "properties": {"origin": {"enum": ["synthesized", "rule_derived", "model_inferred"]}}
+          },
+          "then": {"required": ["derivation"]}
+        }
+      ]
+    },
     "isoDate": {
       "description": "ISO 8601 with flexible granularity: 2024-12-31 | 2024-12 | 2024-Q4 | 2024 | FY2024 | 2020/2024.",
       "type": "string",
@@ -82,6 +168,14 @@
     },
     "confidence": {"enum": ["high", "medium", "low"]},
     "temporalConfidence": {"enum": ["explicit", "inferred", "unknown"]},
+    "origin": {
+      "enum": ["source_stated", "paraphrased", "synthesized", "rule_derived", "model_inferred", "human_added"]
+    },
+    "reviewStatus": {"enum": ["unreviewed", "reviewed", "rejected"]},
+    "sha256": {
+      "type": "string",
+      "pattern": "^(sha256:)?[A-Fa-f0-9]{64}$"
+    },
     "edgeType": {
       "description": "Closed vocabulary of 8 relationship types.",
       "enum": ["uses", "enables", "based-on", "part-of", "tension", "replaces", "extends", "example-of"]
@@ -94,7 +188,25 @@
         "file": {"type": "string", "minLength": 1},
         "type": {"type": "string"},
         "date": {"anyOf": [{"$ref": "#/$defs/isoDate"}, {"type": "null"}]},
-        "url": {"anyOf": [{"type": "string"}, {"type": "null"}]}
+        "url": {"anyOf": [{"const": ""}, {"type": "null"}, {"$ref": "#/$defs/safeLinkUri"}]},
+        "title": {"type": "string"},
+        "authors": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "publisher": {"type": "string"},
+        "version": {"type": "string"},
+        "retrieved_at": {"type": "string", "format": "date-time"},
+        "content_sha256": {"$ref": "#/$defs/sha256"},
+        "license": {"type": "string"},
+        "agents": {"type": "array", "items": {"$ref": "#/$defs/sourceAgent"}}
+      }
+    },
+    "sourceAgent": {
+      "type": "object",
+      "required": ["id", "label", "type", "role"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "label": {"type": "string", "minLength": 1},
+        "type": {"enum": ["person", "organization", "software"]},
+        "role": {"enum": ["author", "publisher", "creator", "editor", "data_producer", "host", "extractor"]}
       }
     },
     "cluster": {
@@ -126,7 +238,172 @@
         "source": {"type": "string", "minLength": 1},
         "locator": {"anyOf": [{"type": "string"}, {"type": "null"}]},
         "label": {"anyOf": [{"type": "string"}, {"type": "null"}]},
-        "url": {"anyOf": [{"type": "string"}, {"type": "null"}]}
+        "url": {"anyOf": [{"const": ""}, {"type": "null"}, {"$ref": "#/$defs/safeLinkUri"}]},
+        "selector": {"$ref": "#/$defs/selector"}
+      }
+    },
+    "selector": {
+      "description": "W3C Web Annotation-inspired source selector plus pragmatic document selectors.",
+      "$comment": "JSON Schema 2020-12 can require the selector-specific sibling fields but cannot compare start and end. The core validator enforces 0 <= start <= end.",
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": {"enum": ["TextQuoteSelector", "TextPositionSelector", "PageSelector", "FragmentSelector", "CsvSelector", "SvgSelector", "JsonPointerSelector", "CodeSelector"]},
+        "exact": {"type": "string"},
+        "prefix": {"type": "string"},
+        "suffix": {"type": "string"},
+        "start": {"type": "integer", "minimum": 0},
+        "end": {"type": "integer", "minimum": 0},
+        "page": {"type": "integer", "minimum": 1},
+        "fragment": {"type": "string"},
+        "sheet": {"type": "string"},
+        "cell_range": {"type": "string"},
+        "xpath": {"type": "string"},
+        "json_pointer": {"type": "string"},
+        "file": {"type": "string"},
+        "symbol": {"type": "string"}
+      },
+      "allOf": [
+        {
+          "if": {"required": ["type"], "properties": {"type": {"const": "TextQuoteSelector"}}},
+          "then": {"required": ["exact"]}
+        },
+        {
+          "if": {"required": ["type"], "properties": {"type": {"const": "TextPositionSelector"}}},
+          "then": {"required": ["start", "end"]}
+        },
+        {
+          "if": {"required": ["type"], "properties": {"type": {"const": "PageSelector"}}},
+          "then": {"required": ["page"]}
+        },
+        {
+          "if": {"required": ["type"], "properties": {"type": {"const": "FragmentSelector"}}},
+          "then": {"required": ["fragment"]}
+        },
+        {
+          "if": {"required": ["type"], "properties": {"type": {"const": "CsvSelector"}}},
+          "then": {"required": ["sheet", "cell_range"]}
+        },
+        {
+          "if": {"required": ["type"], "properties": {"type": {"const": "SvgSelector"}}},
+          "then": {"required": ["xpath"]}
+        },
+        {
+          "if": {"required": ["type"], "properties": {"type": {"const": "JsonPointerSelector"}}},
+          "then": {"required": ["json_pointer"]}
+        },
+        {
+          "if": {"required": ["type"], "properties": {"type": {"const": "CodeSelector"}}},
+          "then": {"required": ["file", "symbol"]}
+        }
+      ]
+    },
+    "evidence": {
+      "type": "object",
+      "required": ["id", "source", "selector", "support", "attribution_basis"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"},
+        "source": {"type": "string", "minLength": 1},
+        "selector": {"$ref": "#/$defs/selector"},
+        "support": {"enum": ["supports", "contradicts", "contextualizes", "mentions"]},
+        "attribution_basis": {"enum": ["source_explicit", "parser_derived", "model_inferred", "human_added"]},
+        "excerpt": {"type": "string"},
+        "excerpt_sha256": {"$ref": "#/$defs/sha256"},
+        "derivation": {"$ref": "#/$defs/derivation"},
+        "review_status": {"$ref": "#/$defs/reviewStatus"}
+      },
+      "allOf": [
+        {
+          "if": {
+            "required": ["attribution_basis"],
+            "properties": {"attribution_basis": {"enum": ["parser_derived", "model_inferred"]}}
+          },
+          "then": {"required": ["derivation"]}
+        }
+      ]
+    },
+    "placeIdentifier": {
+      "type": "object",
+      "required": ["scheme", "value"],
+      "properties": {
+        "scheme": {"type": "string", "minLength": 1},
+        "value": {"type": "string", "minLength": 1}
+      }
+    },
+    "place": {
+      "type": "object",
+      "required": ["id", "label", "kind"],
+      "properties": {
+        "id": {"$ref": "#/$defs/safeIdentifierUri"},
+        "label": {"type": "string", "minLength": 1},
+        "kind": {"enum": ["country", "region", "city", "site", "address", "market", "organization_defined"]},
+        "identifiers": {"type": "array", "items": {"$ref": "#/$defs/placeIdentifier"}},
+        "geometry": {"anyOf": [{"type": "object"}, {"type": "null"}]},
+        "precision": {"enum": ["exact", "address", "site", "city", "region", "country", "coarse"]},
+        "sensitive": {"type": "boolean"},
+        "redacted": {"type": "boolean"}
+      },
+      "allOf": [
+        {
+          "if": {
+            "required": ["sensitive"],
+            "properties": {"sensitive": {"const": true}}
+          },
+          "then": {
+            "required": ["redacted"],
+            "properties": {"redacted": {"const": true}}
+          }
+        },
+        {
+          "if": {
+            "required": ["redacted"],
+            "properties": {"redacted": {"const": true}}
+          },
+          "then": {
+            "description": "A redacted place is structurally coarse: precise kinds, precision, geometry and external identifiers are forbidden.",
+            "required": ["precision"],
+            "properties": {
+              "kind": {"enum": ["country", "region", "city", "market", "organization_defined"]},
+              "precision": {"enum": ["city", "region", "country", "coarse"]},
+              "identifiers": false,
+              "geometry": false
+            }
+          }
+        }
+      ]
+    },
+    "spatialContext": {
+      "type": "object",
+      "required": ["role", "place", "basis", "confidence", "evidence"],
+      "properties": {
+        "role": {"enum": ["jurisdiction", "market_scope", "event_location", "mentioned_location", "origin", "destination"]},
+        "place": {"$ref": "#/$defs/place"},
+        "basis": {"enum": ["source_explicit", "parser_derived", "model_inferred", "human_added"]},
+        "confidence": {"$ref": "#/$defs/confidence"},
+        "evidence": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+        "derivation": {"$ref": "#/$defs/derivation"}
+      },
+      "allOf": [
+        {
+          "if": {
+            "required": ["basis"],
+            "properties": {"basis": {"enum": ["parser_derived", "model_inferred"]}}
+          },
+          "then": {"required": ["derivation"]}
+        }
+      ]
+    },
+    "derivation": {
+      "type": "object",
+      "required": ["kind", "activity", "inputs", "summary", "review_status"],
+      "properties": {
+        "kind": {"enum": ["rule_derived", "model_inferred", "synthesized", "human_added"]},
+        "activity": {"type": "string", "minLength": 1},
+        "inputs": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+        "rule": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+        "summary": {"type": "string", "minLength": 1},
+        "review_status": {"$ref": "#/$defs/reviewStatus"},
+        "evidence": {"type": "array", "items": {"type": "string"}}
       }
     },
     "node": {
@@ -139,11 +416,15 @@
         "confidence": {"$ref": "#/$defs/confidence"},
         "definition": {"type": "string", "minLength": 1},
         "relevance": {"type": "string"},
-        "resource": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+        "resource": {"anyOf": [{"const": ""}, {"type": "null"}, {"$ref": "#/$defs/safeIdentifierUri"}]},
         "statements": {"type": "array", "minItems": 1, "items": {"type": "string"}},
         "temporal": {"$ref": "#/$defs/nodeTemporal"},
         "sources": {"type": "array", "items": {"type": "string"}},
-        "citations": {"type": "array", "items": {"$ref": "#/$defs/citation"}}
+        "citations": {"type": "array", "items": {"$ref": "#/$defs/citation"}},
+        "note": {"type": "string"},
+        "evidence": {"type": "array", "items": {"type": "string"}},
+        "claim_ids": {"type": "array", "items": {"type": "string"}},
+        "spatial_contexts": {"type": "array", "items": {"$ref": "#/$defs/spatialContext"}}
       }
     },
     "edge": {
@@ -163,8 +444,14 @@
             "valid_from": {"anyOf": [{"$ref": "#/$defs/isoDate"}, {"type": "null"}]},
             "valid_until": {"anyOf": [{"$ref": "#/$defs/isoDate"}, {"type": "null"}]}
           }
-        }
-      }
+        },
+        "evidence": {"type": "array", "items": {"type": "string"}},
+        "origin": {"$ref": "#/$defs/origin"},
+        "explanation": {"type": "string"},
+        "derivation": {"$ref": "#/$defs/derivation"},
+        "spatial_contexts": {"type": "array", "items": {"$ref": "#/$defs/spatialContext"}}
+      },
+      "allOf": [{"$ref": "#/$defs/originatedConditions"}]
     },
     "fact": {
       "type": "object",
@@ -184,8 +471,17 @@
           }
         },
         "confidence": {"$ref": "#/$defs/confidence"},
-        "source": {"type": "string", "minLength": 1}
-      }
+        "source": {"type": "string", "minLength": 1},
+        "context": {"type": "string"},
+        "concept": {"type": "string"},
+        "metric": {"type": "string"},
+        "evidence": {"type": "array", "items": {"type": "string"}},
+        "origin": {"$ref": "#/$defs/origin"},
+        "explanation": {"type": "string"},
+        "derivation": {"$ref": "#/$defs/derivation"},
+        "spatial_contexts": {"type": "array", "items": {"$ref": "#/$defs/spatialContext"}}
+      },
+      "allOf": [{"$ref": "#/$defs/originatedConditions"}]
     },
     "chunk": {
       "type": "object",
@@ -195,7 +491,65 @@
         "text": {"type": "string", "minLength": 1},
         "concepts": {"type": "array", "items": {"type": "string"}},
         "temporal_scope": {"anyOf": [{"type": "string"}, {"type": "null"}]},
-        "token_estimate": {"type": "integer", "minimum": 0}
+        "token_estimate": {"type": "integer", "minimum": 0},
+        "kind": {"enum": ["source_claims", "inference", "summary"]},
+        "evidence": {"type": "array", "items": {"type": "string"}},
+        "origin": {"$ref": "#/$defs/origin"},
+        "derivation": {"$ref": "#/$defs/derivation"},
+        "include_in_default_retrieval": {"type": "boolean"},
+        "spatial_contexts": {"type": "array", "items": {"$ref": "#/$defs/spatialContext"}}
+      },
+      "allOf": [
+        {"$ref": "#/$defs/originatedConditions"},
+        {
+          "if": {"required": ["kind"], "properties": {"kind": {"const": "inference"}}},
+          "then": {
+            "required": ["include_in_default_retrieval"],
+            "properties": {"include_in_default_retrieval": {"const": false}}
+          }
+        }
+      ]
+    },
+    "claim": {
+      "type": "object",
+      "required": ["id", "node", "statement", "confidence", "origin", "evidence"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"},
+        "node": {"type": "string", "minLength": 1},
+        "statement": {"type": "string", "minLength": 1},
+        "confidence": {"$ref": "#/$defs/confidence"},
+        "origin": {"$ref": "#/$defs/origin"},
+        "evidence": {"type": "array", "items": {"type": "string"}},
+        "temporal": {"$ref": "#/$defs/nodeTemporal"},
+        "spatial_contexts": {"type": "array", "items": {"$ref": "#/$defs/spatialContext"}},
+        "derivation": {"$ref": "#/$defs/derivation"},
+        "review_status": {"$ref": "#/$defs/reviewStatus"}
+      },
+      "allOf": [{"$ref": "#/$defs/originatedConditions"}]
+    },
+    "assessment": {
+      "type": "object",
+      "required": ["id", "dimension", "scope", "value", "assessor", "method", "assessed_at", "evidence"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "dimension": {"type": "string", "minLength": 1},
+        "scope": {"type": "string", "minLength": 1},
+        "value": {"type": "string", "minLength": 1},
+        "assessor": {"type": "string", "minLength": 1},
+        "method": {"type": "string", "minLength": 1},
+        "assessed_at": {"$ref": "#/$defs/isoDate"},
+        "evidence": {"type": "array", "minItems": 1, "items": {"type": "string"}}
+      }
+    },
+    "factConflict": {
+      "type": "object",
+      "required": ["id", "facts", "relation", "reason"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "facts": {"type": "array", "minItems": 2, "maxItems": 2, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "relation": {"enum": ["tension", "supersedes"]},
+        "reason": {"type": "string", "minLength": 1},
+        "evidence": {"type": "array", "items": {"type": "string"}}
       }
     }
   }

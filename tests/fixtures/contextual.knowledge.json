@@ -1,0 +1,318 @@
+{
+  "@context": {
+    "@vocab": "https://schema.org/",
+    "kd": "https://knowledge-distiller.dev/v4/"
+  },
+  "metadata": {
+    "title": "Contextual Provenance Graph",
+    "distiller_version": "4.0",
+    "distiller_spec_version": "1.1",
+    "sources": [
+      {
+        "id": "source-1",
+        "file": "deployment-guide.txt",
+        "type": "txt",
+        "date": "2026-08",
+        "url": "https://example.invalid/deployment-guide",
+        "title": "Deployment Guide",
+        "authors": ["Example Author"],
+        "publisher": "Example Publisher",
+        "version": "2.1",
+        "retrieved_at": "2026-09-04T09:00:00Z",
+        "content_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "license": "Internal review copy",
+        "agents": [
+          {
+            "id": "person-example",
+            "label": "Example Author",
+            "type": "person",
+            "role": "author"
+          },
+          {
+            "id": "software-kd-adapter",
+            "label": "Knowledge Distiller local adapter",
+            "type": "software",
+            "role": "extractor"
+          }
+        ]
+      }
+    ],
+    "distillation_date": "2026-09-04",
+    "domain": "Deployment",
+    "language": "en",
+    "depth": "deep",
+    "mode": "fresh",
+    "quality_score": 100,
+    "conformance_score": 100,
+    "temporal_confidence": "explicit",
+    "concept_count": 2,
+    "relationship_count": 1,
+    "cluster_count": 1,
+    "fact_count": 2
+  },
+  "evidence": [
+    {
+      "id": "evidence-alpha-beta",
+      "source": "source-1",
+      "selector": {
+        "type": "TextQuoteSelector",
+        "exact": "Alpha enables Beta in the German deployment profile.",
+        "prefix": "The guide states: ",
+        "suffix": " Two deployments were observed."
+      },
+      "support": "supports",
+      "attribution_basis": "source_explicit",
+      "excerpt": "Alpha enables Beta in the German deployment profile.",
+      "review_status": "reviewed"
+    }
+  ],
+  "clusters": [
+    {
+      "id": "deployment",
+      "label": "Deployment",
+      "description": "Concepts involved in the deployment profile.",
+      "concepts": ["alpha", "beta"]
+    }
+  ],
+  "nodes": [
+    {
+      "id": "alpha",
+      "label": "Alpha",
+      "cluster": "deployment",
+      "confidence": "high",
+      "definition": "The enabling component in the deployment profile.",
+      "relevance": "It supplies the capability consumed by Beta.",
+      "resource": "urn:kd:concept:alpha",
+      "statements": ["Alpha enables Beta in the German deployment profile. [1]"],
+      "temporal": {
+        "source_date": "2026-08",
+        "source_period": "2026-Q3",
+        "valid_from": "2026-08",
+        "valid_until": null,
+        "temporal_confidence": "explicit"
+      },
+      "sources": ["source-1"],
+      "citations": [
+        {
+          "n": 1,
+          "source": "source-1",
+          "locator": "quoted sentence",
+          "label": "Deployment Guide",
+          "url": "https://example.invalid/deployment-guide",
+          "selector": {
+            "type": "TextQuoteSelector",
+            "exact": "Alpha enables Beta in the German deployment profile."
+          }
+        }
+      ],
+      "note": "The place is a jurisdiction, not a claimed physical device location.",
+      "evidence": ["evidence-alpha-beta"],
+      "claim_ids": ["claim-alpha-enables-beta"],
+      "spatial_contexts": [
+        {
+          "role": "jurisdiction",
+          "place": {
+            "id": "iso:3166-1:DE",
+            "label": "Germany",
+            "kind": "country",
+            "identifiers": [{"scheme": "ISO-3166-1-alpha-2", "value": "DE"}],
+            "geometry": null,
+            "precision": "country",
+            "sensitive": false,
+            "redacted": false
+          },
+          "basis": "source_explicit",
+          "confidence": "high",
+          "evidence": ["evidence-alpha-beta"]
+        }
+      ]
+    },
+    {
+      "id": "beta",
+      "label": "Beta",
+      "cluster": "deployment",
+      "confidence": "high",
+      "definition": "The component enabled by Alpha.",
+      "relevance": "It is the target capability in the profile.",
+      "resource": "urn:kd:concept:beta",
+      "statements": ["Beta is enabled by Alpha. [1]"],
+      "temporal": {
+        "source_date": "2026-08",
+        "source_period": "2026-Q3",
+        "valid_from": "2026-08",
+        "valid_until": null,
+        "temporal_confidence": "explicit"
+      },
+      "sources": ["source-1"],
+      "citations": [
+        {
+          "n": 1,
+          "source": "source-1",
+          "locator": "quoted sentence",
+          "label": "Deployment Guide",
+          "url": "https://example.invalid/deployment-guide"
+        }
+      ],
+      "evidence": ["evidence-alpha-beta"]
+    }
+  ],
+  "claims": [
+    {
+      "id": "claim-alpha-enables-beta",
+      "node": "alpha",
+      "statement": "Alpha enables Beta in the German deployment profile. [1]",
+      "confidence": "high",
+      "origin": "source_stated",
+      "evidence": ["evidence-alpha-beta"],
+      "temporal": {
+        "source_date": "2026-08",
+        "source_period": "2026-Q3",
+        "valid_from": "2026-08",
+        "valid_until": null,
+        "temporal_confidence": "explicit"
+      },
+      "spatial_contexts": [
+        {
+          "role": "jurisdiction",
+          "place": {
+            "id": "iso:3166-1:DE",
+            "label": "Germany",
+            "kind": "country",
+            "identifiers": [{"scheme": "ISO-3166-1-alpha-2", "value": "DE"}],
+            "precision": "country",
+            "sensitive": false,
+            "redacted": false
+          },
+          "basis": "source_explicit",
+          "confidence": "high",
+          "evidence": ["evidence-alpha-beta"]
+        }
+      ],
+      "review_status": "reviewed"
+    }
+  ],
+  "edges": [
+    {
+      "id": "alpha__enables__beta",
+      "source": "alpha",
+      "target": "beta",
+      "type": "enables",
+      "label": "Alpha enables Beta",
+      "weight": 1.0,
+      "confidence": "high",
+      "temporal": {"valid_from": "2026-08", "valid_until": null},
+      "evidence": ["evidence-alpha-beta"],
+      "origin": "source_stated",
+      "explanation": "The source states the relationship directly.",
+      "spatial_contexts": [
+        {
+          "role": "jurisdiction",
+          "place": {
+            "id": "iso:3166-1:DE",
+            "label": "Germany",
+            "kind": "country",
+            "precision": "country",
+            "sensitive": false,
+            "redacted": false
+          },
+          "basis": "source_explicit",
+          "confidence": "high",
+          "evidence": ["evidence-alpha-beta"]
+        }
+      ]
+    }
+  ],
+  "facts": [
+    {
+      "id": "fact-deployments-source",
+      "statement": "Observed deployment count",
+      "value": "2",
+      "temporal": {
+        "source_date": "2026-08",
+        "source_period": "2026-Q3",
+        "valid_from": "2026-08",
+        "valid_until": null,
+        "temporal_confidence": "explicit"
+      },
+      "confidence": "high",
+      "source": "source-1",
+      "context": "German deployment profile",
+      "concept": "alpha",
+      "metric": "deployments",
+      "evidence": ["evidence-alpha-beta"],
+      "origin": "source_stated",
+      "explanation": "The guide reports two observed deployments.",
+      "spatial_contexts": []
+    },
+    {
+      "id": "fact-deployments-review",
+      "statement": "Reviewed deployment count",
+      "value": "3",
+      "confidence": "medium",
+      "source": "source-1",
+      "context": "Later review note",
+      "concept": "alpha",
+      "metric": "deployments",
+      "evidence": ["evidence-alpha-beta"],
+      "origin": "human_added",
+      "explanation": "A retained review value that conflicts with the source count."
+    }
+  ],
+  "chunks": [
+    {
+      "id": "chunk-alpha-source",
+      "text": "The source states that Alpha enables Beta in the German deployment profile.",
+      "concepts": ["alpha", "beta"],
+      "temporal_scope": "2026-Q3",
+      "token_estimate": 13,
+      "kind": "source_claims",
+      "evidence": ["evidence-alpha-beta"],
+      "origin": "source_stated",
+      "include_in_default_retrieval": true,
+      "spatial_contexts": []
+    },
+    {
+      "id": "chunk-alpha-inference",
+      "text": "A conservative synthesis says Alpha can support Beta when the cited condition holds.",
+      "concepts": ["alpha", "beta"],
+      "temporal_scope": "2026-Q3",
+      "token_estimate": 14,
+      "kind": "inference",
+      "evidence": ["evidence-alpha-beta"],
+      "origin": "model_inferred",
+      "derivation": {
+        "kind": "model_inferred",
+        "activity": "profile-condition-synthesis-v1",
+        "inputs": ["claim:claim-alpha-enables-beta"],
+        "rule": null,
+        "summary": "Generalized the explicit profile statement without asserting a universal relation.",
+        "review_status": "unreviewed",
+        "evidence": ["evidence-alpha-beta"]
+      },
+      "include_in_default_retrieval": false,
+      "spatial_contexts": []
+    }
+  ],
+  "assessments": [
+    {
+      "id": "assessment-source-completeness",
+      "dimension": "source_completeness",
+      "scope": "source:source-1",
+      "value": "reviewed",
+      "assessor": "person-example-reviewer",
+      "method": "manual locator check",
+      "assessed_at": "2026-09-04",
+      "evidence": ["evidence-alpha-beta"]
+    }
+  ],
+  "fact_conflicts": [
+    {
+      "id": "conflict-deployment-count",
+      "facts": ["fact-deployments-source", "fact-deployments-review"],
+      "relation": "tension",
+      "reason": "The source and later review note retain different counts.",
+      "evidence": ["evidence-alpha-beta"]
+    }
+  ],
+  "open_questions": ["Which deployment count should be accepted after human review?"]
+}

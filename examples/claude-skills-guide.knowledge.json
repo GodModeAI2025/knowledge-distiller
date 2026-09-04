@@ -36,7 +36,8 @@
     "concept_count": 13,
     "relationship_count": 15,
     "cluster_count": 7,
-    "fact_count": 13
+    "fact_count": 13,
+    "conformance_score": 100
   },
   "clusters": [
     {

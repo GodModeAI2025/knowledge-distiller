@@ -1,16 +1,16 @@
 ---
 type: Concept
-id: open-standard-skills-api
+id: "open-standard-skills-api"
 label: "Open Standard & Skills API"
-cluster: distribution
-confidence: high
+cluster: "distribution"
+confidence: "high"
 temporal:
-  source_date: 2026-01
+  source_date: "2026-01"
   source_period: null
-  valid_from: 2026-01
+  valid_from: "2026-01"
   valid_until: null
-  temporal_confidence: inferred
-sources: [s1]
+  temporal_confidence: "inferred"
+sources: ["s1"]
 ---
 
 # Open Standard & Skills API

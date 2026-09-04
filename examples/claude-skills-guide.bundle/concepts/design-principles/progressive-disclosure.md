@@ -1,16 +1,16 @@
 ---
 type: Concept
-id: progressive-disclosure
-label: Progressive Disclosure
-cluster: design-principles
-confidence: high
+id: "progressive-disclosure"
+label: "Progressive Disclosure"
+cluster: "design-principles"
+confidence: "high"
 temporal:
-  source_date: 2026-01
+  source_date: "2026-01"
   source_period: null
-  valid_from: 2025
+  valid_from: "2025"
   valid_until: null
-  temporal_confidence: inferred
-sources: [s1]
+  temporal_confidence: "inferred"
+sources: ["s1"]
 ---
 
 # Progressive Disclosure

@@ -36,7 +36,8 @@
     "concept_count": 13,
     "relationship_count": 15,
     "cluster_count": 7,
-    "fact_count": 13
+    "fact_count": 13,
+    "conformance_score": 100
   },
   "clusters": [
     {
@@ -1020,5 +1021,9 @@
     "The allowed-tools field is listed as optional with example syntax but not fully documented — what is the complete list of allowed tool identifiers?",
     "How does the three-level progressive disclosure system handle skill conflicts when multiple skills are loaded simultaneously? No conflict resolution mechanism is described.",
     "The guide claims '15-30 minutes to build and test your first working skill' — this depends heavily on use-case complexity; no complexity classification is provided."
-  ]
+  ],
+  "evidence": [],
+  "claims": [],
+  "assessments": [],
+  "fact_conflicts": []
 }
