@@ -84,7 +84,7 @@ body {
 }
 
 .chip b { color: var(--ink); font-weight: 650; font-size: 13px; }
-.chip.quality b { color: var(--accent); }
+.chip.conformance b { color: var(--accent); }
 
 #search {
   flex: 0 0 auto;
@@ -117,6 +117,79 @@ body {
 #cy {
   position: absolute;
   inset: 0;
+}
+
+.graph-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+.graph-canvas:active { cursor: grabbing; }
+.graph-canvas:focus-visible { outline: 3px solid rgba(47, 111, 237, .35); outline-offset: -3px; }
+#kd-arrow path { fill: #9aa6b2; }
+
+.graph-edge {
+  stroke: #c2cad3;
+  opacity: .86;
+  transition: opacity .16s ease;
+  vector-effect: non-scaling-stroke;
+}
+.graph-edge.tension { stroke: #e15759; stroke-dasharray: 7 5; }
+.edge-label {
+  fill: #5a6672;
+  font-size: 9px;
+  text-anchor: middle;
+  paint-order: stroke;
+  stroke: #fff;
+  stroke-width: 4px;
+  stroke-linejoin: round;
+  pointer-events: none;
+  transition: opacity .16s ease;
+}
+
+.graph-node {
+  cursor: pointer;
+  opacity: 1;
+  transition: opacity .16s ease;
+  outline: none;
+}
+.graph-node .node-circle {
+  stroke: rgba(0, 0, 0, .2);
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+}
+.graph-node:hover .node-circle,
+.graph-node:focus-visible .node-circle { stroke: #2f6fed; stroke-width: 3; }
+.graph-node.is-selected .node-circle { stroke: #2f6fed; stroke-width: 4; }
+.graph-node.superseded { opacity: .55; }
+.graph-node.superseded .node-circle { fill: #c2c9d1; stroke-dasharray: 5 3; }
+.graph-node.dragging { cursor: grabbing; }
+.node-label {
+  fill: #15202b;
+  font-size: 11px;
+  font-weight: 550;
+  text-anchor: middle;
+  dominant-baseline: central;
+  paint-order: stroke;
+  stroke: #fff;
+  stroke-width: 3.5px;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+.graph-node.is-hidden,
+.graph-edge.is-hidden,
+.edge-label.is-hidden { display: none; }
+.graph-node.is-dim,
+.graph-edge.is-dim,
+.edge-label.is-dim { opacity: .12; }
+.graph-empty {
+  fill: var(--muted);
+  font-size: 15px;
+  text-anchor: middle;
 }
 
 .load-error {
@@ -161,8 +234,14 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
+  width: 100%;
   padding: 3px 5px;
+  border: 0;
   border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
   cursor: pointer;
   user-select: none;
 }
@@ -246,6 +325,15 @@ body {
 .detail-md ul { margin: 4px 0; padding-left: 20px; }
 .detail-md li { margin: 3px 0; }
 .detail-md code { background: var(--chip-bg); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+.detail-md a { color: var(--accent); text-decoration: none; }
+.detail-md a:hover { text-decoration: underline; }
+.detail-md h3, .detail-md h4 { margin: 10px 0 4px; font-size: 14px; }
+.detail-md blockquote {
+  margin: 6px 0;
+  padding: 4px 10px;
+  border-left: 3px solid var(--line);
+  color: var(--muted);
+}
 
 .cite-list, .link-list { list-style: none; margin: 4px 0; padding: 0; }
 .cite-list li { margin: 5px 0; font-size: 12.5px; color: var(--muted); }
@@ -258,6 +346,13 @@ body {
   color: var(--accent);
   cursor: pointer;
   text-decoration: none;
+}
+.node-link {
+  appearance: none;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  font: inherit;
 }
 .link-list a:hover, .node-link:hover { text-decoration: underline; }
 .edge-type {
@@ -289,7 +384,7 @@ body {
   letter-spacing: .05em;
   color: var(--muted);
 }
-.facts-table td .v { font-weight: 600; }
+.facts-table td.v { font-weight: 600; }
 
 .oq-list { margin: 4px 0; padding-left: 18px; font-size: 13px; }
 .oq-list li { margin: 6px 0; }

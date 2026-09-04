@@ -1,16 +1,16 @@
 ---
 type: Concept
-id: workflow-patterns
-label: Workflow Patterns
-cluster: workflow-patterns
-confidence: high
+id: "workflow-patterns"
+label: "Workflow Patterns"
+cluster: "workflow-patterns"
+confidence: "high"
 temporal:
-  source_date: 2026-01
+  source_date: "2026-01"
   source_period: null
-  valid_from: 2025
+  valid_from: "2025"
   valid_until: null
-  temporal_confidence: inferred
-sources: [s1]
+  temporal_confidence: "inferred"
+sources: ["s1"]
 ---
 
 # Workflow Patterns
@@ -18,6 +18,8 @@ sources: [s1]
 **Definition:** Five recurring structural patterns for skill instructions, distilled from early adopters and internal teams: (1) Sequential Workflow Orchestration, (2) Multi-MCP Coordination, (3) Iterative Refinement, (4) Context-Aware Tool Selection, (5) Domain-Specific Intelligence. These are heuristics, not prescriptive templates.
 
 **Warum relevant:** Choosing the wrong pattern leads to brittle or incomplete skills. Each pattern targets a specific class of workflow complexity.
+
+> The Home Depot framing: problem-first means user describes outcome and skill orchestrates tools; tool-first means user has tool access and skill provides workflow expertise. Most skills lean one direction.
 
 ## Beziehungen
 

@@ -1,0 +1,47 @@
+{
+  "version": "1.0",
+  "cases": [
+    {
+      "id": "contextual-provenance-regression",
+      "graph": "../tests/fixtures/contextual.knowledge.json",
+      "minimum_f1": 1.0,
+      "expected": {
+        "nodes": [
+          {"id": "alpha", "resource": "urn:kd:concept:alpha"},
+          {"id": "beta", "resource": "urn:kd:concept:beta"}
+        ],
+        "edges": [
+          {"source": "alpha", "type": "enables", "target": "beta"}
+        ],
+        "claims": [
+          {
+            "id": "claim-alpha-enables-beta",
+            "node": "alpha",
+            "statement": "Alpha enables Beta in the German deployment profile. [1]"
+          }
+        ],
+        "facts": [
+          {
+            "id": "fact-deployments-source",
+            "statement": "Observed deployment count",
+            "value": "2",
+            "source": "source-1"
+          },
+          {
+            "id": "fact-deployments-review",
+            "statement": "Reviewed deployment count",
+            "value": "3",
+            "source": "source-1"
+          }
+        ],
+        "evidence": [
+          {
+            "id": "evidence-alpha-beta",
+            "source": "source-1",
+            "selector_type": "TextQuoteSelector"
+          }
+        ]
+      }
+    }
+  ]
+}

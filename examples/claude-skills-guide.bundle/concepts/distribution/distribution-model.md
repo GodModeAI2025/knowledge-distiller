@@ -1,16 +1,16 @@
 ---
 type: Concept
-id: distribution-model
-label: Distribution Model
-cluster: distribution
-confidence: high
+id: "distribution-model"
+label: "Distribution Model"
+cluster: "distribution"
+confidence: "high"
 temporal:
-  source_date: 2026-01
+  source_date: "2026-01"
   source_period: null
-  valid_from: 2025-12-18
+  valid_from: "2025-12-18"
   valid_until: null
-  temporal_confidence: explicit
-sources: [s1]
+  temporal_confidence: "explicit"
+sources: ["s1"]
 ---
 
 # Distribution Model

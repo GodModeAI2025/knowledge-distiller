@@ -1,17 +1,17 @@
 ---
 type: Concept
-id: mcp
-label: MCP (Model Context Protocol)
-cluster: design-principles
-confidence: high
+id: "mcp"
+label: "MCP (Model Context Protocol)"
+cluster: "design-principles"
+confidence: "high"
 resource: "https://modelcontextprotocol.io"
 temporal:
-  source_date: 2026-01
+  source_date: "2026-01"
   source_period: null
-  valid_from: 2025
+  valid_from: "2025"
   valid_until: null
-  temporal_confidence: inferred
-sources: [s1]
+  temporal_confidence: "inferred"
+sources: ["s1"]
 ---
 
 # MCP (Model Context Protocol)

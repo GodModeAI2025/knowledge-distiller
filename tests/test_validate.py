@@ -4,11 +4,16 @@ Runs with either ``python3 -m pytest tests/`` or ``python3 -m unittest discover 
 Mirrors OKF's approach: assert *specific* validator error strings so the contract is
 regression-locked, not vibe-checked.
 """
+import contextlib
 import copy
+import io
 import json
+import os
 import sys
+import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
@@ -122,7 +127,13 @@ class TestWarnings(unittest.TestCase):
         d["nodes"][0].pop("citations", None)
         d["nodes"][0]["statements"] = ["A statement with no citation marker."]
         rep = run(d)
-        self.assertEqual(rep.errors, [], err_text(rep))  # still conformant
+        self.assertIn("stored 100 but diagnostics require 98", err_text(rep))
+
+        # Refresh derived scores before publishing the warned-but-otherwise-valid graph.
+        bg.recompute(d)
+        rep = run(d)
+        self.assertEqual(rep.errors, [], err_text(rep))
+        self.assertEqual(d["metadata"]["quality_score"], 98)
         self.assertTrue(any("has no citations" in w for w in rep.warnings))
 
     def test_unknown_spec_version_warns(self):
@@ -172,6 +183,39 @@ class TestBuildGraph(unittest.TestCase):
         self.assertEqual(d["clusters"][0]["concepts"], ["alpha", "beta"])
         self.assertEqual(d["metadata"]["quality_score"], 100)
 
+    def test_write_rejects_symlinks_and_atomically_breaks_hardlinks(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            document = load(FIXTURE)
+            document["metadata"]["concept_count"] = 0
+            original = (json.dumps(document, ensure_ascii=False, indent=2) + "\n").encode()
+            source = root / "graph.knowledge.json"
+            source.write_bytes(original)
+
+            symlink = root / "linked.knowledge.json"
+            symlink.symlink_to(source)
+            with contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(bg.main([str(symlink), "--write"]), 1)
+            self.assertEqual(source.read_bytes(), original)
+
+            hardlink = root / "hardlink.knowledge.json"
+            os.link(source, hardlink)
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(bg.main([str(source), "--write"]), 0)
+            self.assertNotEqual(source.read_bytes(), original)
+            self.assertEqual(hardlink.read_bytes(), original)
+
+    def test_failed_atomic_replace_preserves_canonical_bytes(self):
+        with tempfile.TemporaryDirectory() as temp:
+            source = Path(temp) / "graph.knowledge.json"
+            original = FIXTURE.read_bytes()
+            source.write_bytes(original)
+            with mock.patch.object(bg.os, "replace", side_effect=OSError("simulated")):
+                with contextlib.redirect_stderr(io.StringIO()):
+                    self.assertEqual(bg.main([str(source), "--write"]), 1)
+            self.assertEqual(source.read_bytes(), original)
+            self.assertEqual(list(Path(temp).glob(".kd-graph-*.tmp")), [])
+
     def test_canonical_tension_edge_id_is_sorted(self):
         # tension is symmetric: id must be order-independent
         e1 = bg.canonical_edge_id({"source": "z", "target": "a", "type": "tension"})
@@ -188,7 +232,7 @@ class TestRenderersSmoke(unittest.TestCase):
     def test_build_md_produces_sections(self):
         md = build_md.render(load(FIXTURE))
         for section in ("## Concept Map", "## Kernwissen", "## Wissensgraph (Mermaid)",
-                        "## Quellen", "distiller_spec_version: 1.0"):
+                        "## Quellen", 'distiller_spec_version: "1.0"'):
             self.assertIn(section, md)
 
     def test_chunks_in_md_are_clean(self):

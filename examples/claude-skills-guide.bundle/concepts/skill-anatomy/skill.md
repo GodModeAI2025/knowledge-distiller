@@ -1,16 +1,16 @@
 ---
 type: Concept
-id: skill
-label: Skill
-cluster: skill-anatomy
-confidence: high
+id: "skill"
+label: "Skill"
+cluster: "skill-anatomy"
+confidence: "high"
 temporal:
-  source_date: 2026-01
+  source_date: "2026-01"
   source_period: null
-  valid_from: 2025
+  valid_from: "2025"
   valid_until: null
-  temporal_confidence: inferred
-sources: [s1]
+  temporal_confidence: "inferred"
+sources: ["s1"]
 ---
 
 # Skill
@@ -18,6 +18,8 @@ sources: [s1]
 **Definition:** A skill is a folder-based instruction package that teaches Claude how to handle specific tasks or workflows. It consists of a required SKILL.md file (Markdown with YAML frontmatter) and optional subdirectories: scripts/ (executable code), references/ (documentation), and assets/ (templates, fonts, icons).
 
 **Warum relevant:** Skills eliminate the need to re-explain preferences and workflows in every conversation. They encode repeatable processes once, making Claude's behavior consistent and automating multi-step workflows. For MCP builders, skills add the knowledge layer on top of raw tool access.
+
+> The guide uses a kitchen analogy: MCP is the professional kitchen (tools and ingredients); skills are the recipes (how to use them). This cleanly separates connectivity concerns from workflow knowledge.
 
 ## Beziehungen
 
