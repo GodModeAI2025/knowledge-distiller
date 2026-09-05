@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 import tempfile
 from pathlib import Path
@@ -31,6 +32,10 @@ import strict_json  # noqa: E402
 TOKEN_CSS = "/*__VIZ_CSS__*/"
 TOKEN_JS = "/*__VIZ_JS__*/"
 TOKEN_DATA = "/*__GRAPH_DATA__*/"
+# Matched in one pass so that inserted content is never rescanned for another token.
+TOKEN_PATTERN = re.compile(
+    "|".join(re.escape(token) for token in (TOKEN_CSS, TOKEN_JS, TOKEN_DATA))
+)
 
 
 class ViewerOutputError(ValueError):
@@ -130,10 +135,21 @@ def render(data: dict) -> str:
         .replace("\u2029", "\\u2029")
     )
 
-    # Literal token substitution (order doesn't matter: tokens are disjoint).
-    html = template.replace(TOKEN_CSS, css)
-    html = html.replace(TOKEN_DATA, data_json)
-    return html.replace(TOKEN_JS, js)
+    # Substitute all three tokens in ONE pass over the template.
+    #
+    # Sequential ``str.replace`` calls are not safe here: the tokens are disjoint from
+    # each other, but that is not the property this needs.  What it needs is that
+    # substituted content never contains a token that has not been substituted yet, and
+    # ``data_json`` is document-derived.  ``TOKEN_JS`` is built from ``/``, ``*``, ``_``
+    # and letters, none of which the escaping above touches, so a graph value carrying
+    # that literal survived escaping and was then replaced by the whole body of
+    # ``viz.js`` -- unescaped quotes and newlines included -- in the middle of a JSON
+    # string literal, which ends the string and leaves the rest in script context.
+    #
+    # A single pass consumes each token once and never rescans what it inserted.
+    replacements = {TOKEN_CSS: css, TOKEN_DATA: data_json, TOKEN_JS: js}
+    # ``re.sub`` with a callable uses the return value literally: no backslash escapes.
+    return TOKEN_PATTERN.sub(lambda match: replacements[match.group(0)], template)
 
 
 def main(argv: list[str] | None = None) -> int:
