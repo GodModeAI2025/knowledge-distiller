@@ -82,9 +82,26 @@ def safe_link(url) -> str | None:
     return url
 
 
+# The escaping policy for untrusted document text lives in build_graph so that the
+# Markdown and Mermaid renderers cannot drift apart. build_md already imports
+# build_graph; the reverse would be an import cycle.
+md_text = bg.md_text
+md_code = bg.md_code
+md_url = bg.md_url
+md_link = bg.md_link
+md_wikilink = bg.md_wikilink
+
+
+def escaped_cell(text: str) -> str:
+    """Table-cell protection for text that is already escaped for Markdown."""
+    return " ".join(str(text).replace("|", "\\|").splitlines())
+
+
 def cell(value) -> str:
-    """Escape a value for a Markdown table cell."""
-    return str(value or "").replace("|", "\\|").replace("\r", " ").replace("\n", " ")
+    """Escape an untrusted value for a Markdown table cell."""
+    # ``value or ""`` is kept from the original so that falsy values still render empty;
+    # only the escaping changes here.
+    return escaped_cell(md_text(value or ""))
 
 
 def spatial_label(contexts) -> str:
@@ -94,20 +111,21 @@ def spatial_label(contexts) -> str:
         place = place if isinstance(place, dict) else {}
         label = place.get("label") or place.get("id")
         if label:
-            item = f"{context.get('role', 'place')}: {label} ({context.get('basis', 'unknown')})"
+            item = (f"{md_text(context.get('role', 'place'))}: {md_text(label)} "
+                    f"({md_text(context.get('basis', 'unknown'))})")
             if context.get("confidence"):
-                item += f" · confidence: {context['confidence']}"
+                item += f" · confidence: {md_text(context['confidence'])}"
             if context.get("evidence"):
                 item += f" · evidence: {evidence_refs(context['evidence'])}"
             derivation = context.get("derivation")
             if isinstance(derivation, dict) and derivation.get("summary"):
-                item += f" · derivation: {derivation['summary']}"
+                item += f" · derivation: {md_text(derivation['summary'])}"
             items.append(item)
     return "; ".join(items)
 
 
 def evidence_refs(ids) -> str:
-    return ", ".join(f"`{identifier}`" for identifier in string_items(ids)) or "—"
+    return ", ".join(f"`{md_code(identifier)}`" for identifier in string_items(ids)) or "—"
 
 
 def json_value(value) -> str:
@@ -183,7 +201,13 @@ def frontmatter(doc: dict) -> str:
         if s.get("date") is not None:
             lines.append(f"    date: {y(s.get('date'))}")
         if s.get("url") is not None:
-            lines.append(f"    url: {y(s.get('url'))}")
+            # Renderers surface a URL-valued property as a clickable link, so the same
+            # scheme allowlist that governs the body has to govern the frontmatter.  A
+            # rejected value is kept -- it is still evidence about the source -- but
+            # under a key nothing will offer to open.
+            safe = safe_link(s.get("url"))
+            key = "url" if safe is not None else "url_unsafe"
+            lines.append(f"    {key}: {y(safe if safe is not None else s.get('url'))}")
         for field in ("title", "publisher", "version", "retrieved_at", "content_sha256", "license"):
             if s.get(field) is not None:
                 lines.append(f"    {field}: {y(s.get(field))}")
@@ -214,46 +238,48 @@ def kernwissen(doc: dict) -> str:
     lines = ["## Kernwissen", ""]
     for n in doc.get("nodes", []) or []:
         nid = n["id"]
-        lines.append(f"### {n.get('label', nid)}")
+        lines.append(f"### {md_text(n.get('label', nid))}")
         lines.append("")
-        lines.append(f"📊 Confidence: `{n.get('confidence','')}` | "
-                     f"🏷️ Cluster: {cluster_label.get(n.get('cluster'), n.get('cluster',''))} | "
-                     f"📅 {zeitbezug(n.get('temporal', {}))}")
+        lines.append(f"📊 Confidence: `{md_code(n.get('confidence',''))}` | "
+                     f"🏷️ Cluster: {md_text(cluster_label.get(n.get('cluster'), n.get('cluster','')))} | "
+                     f"📅 {md_text(zeitbezug(n.get('temporal', {})))}")
         if n.get("resource"):
-            lines.append(f"🔗 Resource: `{n.get('resource')}`")
+            lines.append(f"🔗 Resource: `{md_code(n.get('resource'))}`")
         if n.get("sources"):
             lines.append(f"📚 Sources: {evidence_refs(n.get('sources'))}")
         if n.get("spatial_contexts"):
             lines.append(f"🌍 Spatial: {spatial_label(n.get('spatial_contexts'))}")
         lines.append("")
-        lines.append(f"**Definition:** {n.get('definition','')}")
+        lines.append(f"**Definition:** {md_text(n.get('definition',''))}")
         lines.append("")
-        lines.append(f"**Warum relevant:** {n.get('relevance','')}")
+        lines.append(f"**Warum relevant:** {md_text(n.get('relevance',''))}")
         lines.append("")
         rels = out_edges.get(nid, [])
         if rels:
             lines.append("**Beziehungen:**")
             for e in rels:
-                phrase = REL.get(e.get("type"), f"→ {e.get('type')}:")
+                phrase = REL.get(e.get("type"), f"→ {md_text(e.get('type'))}:")
                 tl = nodes_by_id.get(e.get("target"), {}).get("label", e.get("target"))
                 detail = ""
                 if e.get("explanation"):
-                    detail += f" — {e.get('explanation')} ({e.get('origin', 'origin unknown')})"
+                    detail += (f" — {md_text(e.get('explanation'))} "
+                               f"({md_text(e.get('origin', 'origin unknown'))})")
                 if e.get("evidence"):
                     detail += f" — Evidence: {evidence_refs(e.get('evidence'))}"
-                lines.append(f"- {phrase} [[{tl}]]{detail}")
+                lines.append(f"- {phrase} {md_wikilink(tl)}{detail}")
             lines.append("")
         lines.append("**Kernaussagen:**")
         for st in n.get("statements", []) or []:
-            lines.append(f"- {st}")
+            lines.append(f"- {md_text(st)}")
             for claim in claims_by_node.get(nid, []):
                 if claim.get("statement") == st:
-                    lines.append(f"  - Claim `{claim.get('id')}` · confidence `{claim.get('confidence')}` · "
-                                 f"origin `{claim.get('origin')}` · review "
-                                 f"`{claim.get('review_status', 'unspecified')}` · evidence "
+                    lines.append(f"  - Claim `{md_code(claim.get('id'))}` · confidence "
+                                 f"`{md_code(claim.get('confidence'))}` · "
+                                 f"origin `{md_code(claim.get('origin'))}` · review "
+                                 f"`{md_code(claim.get('review_status', 'unspecified'))}` · evidence "
                                  f"{evidence_refs(claim.get('evidence'))}")
         if n.get("note"):
-            lines.extend(["", f"> {n.get('note')}"])
+            lines.extend(["", f"> {md_text(n.get('note'))}"])
         if n.get("evidence"):
             lines.extend(["", f"**Evidence:** {evidence_refs(n.get('evidence'))}"])
         if n.get("temporal"):
@@ -284,18 +310,18 @@ def facts_table(doc: dict) -> str:
         explanation = f.get("explanation") or ""
         context = f.get("context") or explanation
         lines.append(f"| {cell(f.get('id'))} | {cell(f.get('statement'))} | {cell(f.get('value'))} | {cell(context)} | {cell(when)} | "
-                     f"{cell(spatial_label(f.get('spatial_contexts')))} | {cell(f.get('confidence'))} | [{n}] | "
+                     f"{escaped_cell(spatial_label(f.get('spatial_contexts')))} | {cell(f.get('confidence'))} | [{n}] | "
                      f"{cell(f.get('origin'))} | {cell(', '.join(string_items(f.get('evidence'))))} |")
     lines.extend(["", "### Fact provenance", ""])
     for fact in facts:
         lines.extend([
-            f"#### `{fact.get('id')}`",
+            f"#### `{md_code(fact.get('id'))}`",
             "",
-            f"- Source: `{fact.get('source')}`",
+            f"- Source: `{md_code(fact.get('source'))}`",
             f"- Concept: {json_value(fact.get('concept'))}",
             f"- Metric: {json_value(fact.get('metric'))}",
-            f"- Confidence: `{fact.get('confidence')}`",
-            f"- Origin: `{fact.get('origin', 'unspecified')}`",
+            f"- Confidence: `{md_code(fact.get('confidence'))}`",
+            f"- Origin: `{md_code(fact.get('origin', 'unspecified'))}`",
             f"- Evidence: {evidence_refs(fact.get('evidence'))}",
             "",
         ])
@@ -316,7 +342,7 @@ def open_questions(doc: dict) -> str:
         return ""
     lines = ["## Offene Fragen", ""]
     for q in qs:
-        lines.append(f"- {q}")
+        lines.append(f"- {md_text(q)}")
     return "\n".join(lines) + "\n"
 
 
@@ -328,13 +354,13 @@ def chunks_section(doc: dict) -> str:
     for ch in chs:
         kind = ch.get("kind", "source_claims")
         default = ch.get("include_in_default_retrieval", kind != "inference")
-        lines.append(f"### `{ch.get('id', 'chunk')}`")
+        lines.append(f"### `{md_code(ch.get('id', 'chunk'))}`")
         lines.append("")
-        lines.append(f"- Kind: `{kind}`")
+        lines.append(f"- Kind: `{md_code(kind)}`")
         lines.append(f"- Concepts: {evidence_refs(ch.get('concepts'))}")
         lines.append(f"- Temporal scope: {json_value(ch.get('temporal_scope'))}")
         lines.append(f"- Token estimate: {json_value(ch.get('token_estimate'))}")
-        lines.append(f"- Origin: `{ch.get('origin', 'unspecified')}`")
+        lines.append(f"- Origin: `{md_code(ch.get('origin', 'unspecified'))}`")
         lines.append(f"- Evidence: {evidence_refs(ch.get('evidence'))}")
         lines.append(f"- Include in default retrieval: `{str(bool(default)).lower()}`")
         lines.append("")
@@ -355,11 +381,14 @@ def quellen(doc: dict) -> str:
     for i, s in enumerate(object_records(metadata.get("sources", [])), start=1):
         label = s.get("file", s.get("id"))
         url = safe_link(s.get("url"))
-        link = f"[{label}]({url})" if url else label
-        extra = ", ".join(str(x) for x in [s.get("type"), s.get("date"), s.get("publisher"), s.get("content_sha256")] if x)
+        # ``safe_link`` decides WHETHER a link may be emitted; it does not make the
+        # label or the target safe to interpolate.  A label of ``x](javascript:...)[y``
+        # closed the brackets and produced a working link of its own.
+        link = md_link(label, url) if url else md_text(label)
+        extra = ", ".join(md_text(x) for x in [s.get("type"), s.get("date"), s.get("publisher"), s.get("content_sha256")] if x)
         lines.append(f"### [{i}] {link}")
         lines.append("")
-        lines.append(f"- ID: `{s.get('id')}`")
+        lines.append(f"- ID: `{md_code(s.get('id'))}`")
         if extra:
             lines.append(f"- Summary: {extra}")
         for field in ("title", "version", "retrieved_at", "license"):
@@ -380,19 +409,19 @@ def evidence_section(doc: dict) -> str:
     lines = ["## Evidence", ""]
     for record in records:
         lines.extend([
-            f"### `{record.get('id')}`",
+            f"### `{md_code(record.get('id'))}`",
             "",
-            f"- Source: `{record.get('source')}`",
-            f"- Support: `{record.get('support')}`",
-            f"- Attribution basis: `{record.get('attribution_basis')}`",
-            f"- Review status: `{record.get('review_status', 'unspecified')}`",
+            f"- Source: `{md_code(record.get('source'))}`",
+            f"- Support: `{md_code(record.get('support'))}`",
+            f"- Attribution basis: `{md_code(record.get('attribution_basis'))}`",
+            f"- Review status: `{md_code(record.get('review_status', 'unspecified'))}`",
             "",
         ])
         lines.extend(json_details("Selector", record.get("selector")))
         if record.get("excerpt") is not None:
             lines.extend(json_details("Excerpt", record.get("excerpt")))
         if record.get("excerpt_sha256") is not None:
-            lines.append(f"**Excerpt SHA-256:** `{record.get('excerpt_sha256')}`")
+            lines.append(f"**Excerpt SHA-256:** `{md_code(record.get('excerpt_sha256'))}`")
             lines.append("")
         if record.get("derivation") is not None:
             lines.extend(json_details("Derivation", record.get("derivation")))
@@ -406,12 +435,12 @@ def claims_section(doc: dict) -> str:
     lines = ["## Claims", ""]
     for record in records:
         lines.extend([
-            f"### `{record.get('id')}`",
+            f"### `{md_code(record.get('id'))}`",
             "",
-            f"- Node: `{record.get('node')}`",
-            f"- Confidence: `{record.get('confidence')}`",
-            f"- Origin: `{record.get('origin')}`",
-            f"- Review status: `{record.get('review_status', 'unspecified')}`",
+            f"- Node: `{md_code(record.get('node'))}`",
+            f"- Confidence: `{md_code(record.get('confidence'))}`",
+            f"- Origin: `{md_code(record.get('origin'))}`",
+            f"- Review status: `{md_code(record.get('review_status', 'unspecified'))}`",
             f"- Evidence: {evidence_refs(record.get('evidence'))}",
             "",
         ])
@@ -435,11 +464,11 @@ def edges_section(doc: dict) -> str:
         lines.extend([
             f"### `{edge_id}`",
             "",
-            f"- Endpoints: `{record.get('source')}` → `{record.get('target')}`",
-            f"- Type: `{record.get('type')}`",
-            f"- Weight: `{record.get('weight')}`",
-            f"- Confidence: `{record.get('confidence')}`",
-            f"- Origin: `{record.get('origin', 'unspecified')}`",
+            f"- Endpoints: `{md_code(record.get('source'))}` → `{md_code(record.get('target'))}`",
+            f"- Type: `{md_code(record.get('type'))}`",
+            f"- Weight: `{md_code(record.get('weight'))}`",
+            f"- Confidence: `{md_code(record.get('confidence'))}`",
+            f"- Origin: `{md_code(record.get('origin', 'unspecified'))}`",
             f"- Evidence: {evidence_refs(record.get('evidence'))}",
             "",
         ])
@@ -476,7 +505,7 @@ def conflicts_section(doc: dict) -> str:
         return ""
     lines = ["## Fact Conflicts", ""]
     for record in records:
-        lines.append(f"- `{record.get('id')}`: `{record.get('relation')}` between "
+        lines.append(f"- `{md_code(record.get('id'))}`: `{md_code(record.get('relation'))}` between "
                      f"{', '.join('`' + item + '`' for item in string_items(record.get('facts')))} — "
                      f"{record.get('reason')} — Evidence: {evidence_refs(record.get('evidence'))}")
     return "\n".join(lines) + "\n"
@@ -517,9 +546,9 @@ def render(doc: dict) -> str:
         parts += [conflicts, ""]
     parts += [quellen(doc), "",
               "---", "",
-              f"> Destilliert am {m.get('distillation_date','')} mit Knowledge Distiller "
-              f"v{m.get('distiller_version','4.0')} (Spec {m.get('distiller_spec_version','1.0')})",
-              f"> Conformance-Score: {m.get('conformance_score', m.get('quality_score','?'))}/100",
+              f"> Destilliert am {md_text(m.get('distillation_date',''))} mit Knowledge Distiller "
+              f"v{md_text(m.get('distiller_version','4.0'))} (Spec {md_text(m.get('distiller_spec_version','1.0'))})",
+              f"> Conformance-Score: {md_text(m.get('conformance_score', m.get('quality_score','?')))}/100",
               "> Semantische Richtigkeit: nicht durch den Validator bewertet", ""]
     return "\n".join(parts)
 

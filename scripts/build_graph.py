@@ -104,6 +104,88 @@ def recompute(doc: dict) -> dict:
     return doc
 
 
+# ---------------------------------------------------------------------------
+# Escaping untrusted document text for the Markdown it is rendered into.
+#
+# Every string reachable from a ``.knowledge.json`` is document-derived, so each
+# interpolation below is escaped for the context it lands in.  The escape set is
+# deliberately NARROWER than ``build_exports._markdown_escape``: that one escapes 18
+# metacharacters including ``.``, ``-`` and ``+``, which is correct for a short Canvas
+# node label and unreadable for a paragraph of prose.  Escaped here is only what can
+# introduce structure or active content -- inline HTML, links and wikilinks, and the
+# line breaks that would end the current block.  ``*`` and ``_`` are left alone: an
+# unexpected italic is cosmetic, not injection, and escaping it wrecks the output.
+
+
+def md_text(value, keep_breaks: bool = False) -> str:
+    """Escape untrusted text for a Markdown inline context."""
+    text = "" if value is None else str(value)
+    text = text.replace("\\", "\\\\")
+    text = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    text = text.replace("[", "\\[").replace("]", "\\]")
+    if not keep_breaks:
+        # A line break in a one-line interpolation ends the paragraph, the list item or
+        # the blockquote it sits in, which lets source text open a heading of its own.
+        text = " ".join(text.splitlines())
+    return text
+
+
+def md_code(value) -> str:
+    """Escape untrusted text for an inline code span, which a backtick would close."""
+    text = "" if value is None else str(value)
+    return " ".join(text.replace("`", "'").splitlines())
+
+
+def md_url(url) -> str:
+    """Percent-encode the characters that would end a ``[...](...)`` target early.
+
+    ``urlsplit`` accepts ``)`` in a path, so ``safe_link`` can return a URL that closes
+    the target and leaves attacker-chosen Markdown after it.  ``%`` is deliberately NOT
+    encoded: existing percent-escapes in a legitimate URL must survive unchanged, and
+    encoding these few characters does not change what the URL resolves to.
+    """
+    text = str(url)
+    for char, encoded in (("(", "%28"), (")", "%29"), (" ", "%20"),
+                          ("<", "%3C"), (">", "%3E"), ('"', "%22"), ("\\", "%5C")):
+        text = text.replace(char, encoded)
+    return "".join(text.splitlines())
+
+
+def md_link(label, url) -> str:
+    """A link whose text cannot close the brackets and whose target cannot close the
+    parentheses.  Whether a link may be emitted at all is ``safe_link``'s decision."""
+    return f"[{md_text(label)}]({md_url(url)})"
+
+
+def mermaid_label(value) -> str:
+    """A Mermaid node label that can leave neither the fenced block nor its own quotes.
+
+    Handling only ``"`` was not enough: the label is emitted inside a ```` ```mermaid ````
+    fence, so a label carrying a line break followed by three backticks closed the fence
+    and everything after it rendered as document Markdown.  ``splitlines`` also covers
+    the Unicode line boundaries a plain ``\n`` check would miss.  Brackets and pipes are
+    diagram syntax rather than a breakout, but they corrupt the node shape, so they go
+    the same way.
+    """
+    text = " ".join(str(value).splitlines())
+    for char, replacement in (("\\", "/"), ('"', "'"), ("`", "'"),
+                              ("[", "("), ("]", ")"), ("|", "/")):
+        text = text.replace(char, replacement)
+    return text
+
+
+def md_wikilink(target) -> str:
+    """A wikilink whose target cannot close the brackets or smuggle in an alias.
+
+    ``[`` and ``]`` cannot be backslash-escaped inside ``[[...]]`` without breaking the
+    link, so they are transliterated.  A label carrying them produces a broken link
+    either way; this at least keeps it inside its own brackets.
+    """
+    text = "" if target is None else str(target)
+    text = text.replace("[", "(").replace("]", ")").replace("|", "/")
+    return f"[[{' '.join(text.splitlines())}]]"
+
+
 def render_concept_map(doc: dict) -> str:
     """Deterministic '## Concept Map' grouped by cluster (matches the .md house style)."""
     nodes = {n["id"]: n for n in (doc.get("nodes", []) or [])}
@@ -111,9 +193,9 @@ def render_concept_map(doc: dict) -> str:
     for e in doc.get("edges", []) or []:
         s = e.get("source")
         if s in out_by_node:
-            phrase = EDGE_DISPLAY.get(e.get("type"), f"→ {e.get('type')}:")
+            phrase = EDGE_DISPLAY.get(e.get("type"), f"→ {md_text(e.get('type'))}:")
             tlabel = nodes.get(e.get("target"), {}).get("label", e.get("target"))
-            out_by_node[s].append(f"  - {phrase} [[{tlabel}]]")
+            out_by_node[s].append(f"  - {phrase} {md_wikilink(tlabel)}")
 
     lines = ["## Concept Map", ""]
     for c in doc.get("clusters", []) or []:
@@ -121,13 +203,13 @@ def render_concept_map(doc: dict) -> str:
         members = c.get("concepts", []) or []
         if not members:
             continue
-        lines.append(f"### 🏷️ {c.get('label', cid)}")
+        lines.append(f"### 🏷️ {md_text(c.get('label', cid))}")
         lines.append("")
         for nid in members:
             n = nodes.get(nid)
             if not n:
                 continue
-            lines.append(f"- **[[{n.get('label', nid)}]]**")
+            lines.append(f"- **{md_wikilink(n.get('label', nid))}**")
             lines.extend(out_by_node.get(nid, []))
         lines.append("")
     return "\n".join(lines).rstrip() + "\n"
@@ -146,10 +228,10 @@ def render_mermaid(doc: dict) -> str:
         s, t, ty = e.get("source"), e.get("target"), e.get("type")
         if s not in nodes or t not in nodes:
             continue
-        sl = nodes[s].get("label", s).replace('"', "'")
-        tl = nodes[t].get("label", t).replace('"', "'")
+        sl = mermaid_label(nodes[s].get("label", s))
+        tl = mermaid_label(nodes[t].get("label", t))
         connector = "<-->" if ty == "tension" else "-->"
-        line = f'    {mid(s)}["{sl}"] {connector}|{ty}| {mid(t)}["{tl}"]'
+        line = f'    {mid(s)}["{sl}"] {connector}|{mermaid_label(ty)}| {mid(t)}["{tl}"]'
         if line not in seen:
             seen.add(line)
             lines.append(line)
