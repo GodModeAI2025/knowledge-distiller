@@ -189,6 +189,21 @@ distillation stage can copy an appropriate segment selector into an evidence rec
 segment/source hashes for audit. Extraction alone does not prove a claim, assign confidence, or
 decide which segment supports which graph node, edge, or fact.
 
+Once a graph exists, the anchors can be checked mechanically against the same adapter output:
+
+```bash
+python3 scripts/verify_evidence.py graph.knowledge.json normalized.source.json [--require-all] [--json]
+```
+
+Evidence is paired with a normalized source only when the graph source carries the identical
+`content_sha256`. `TextQuoteSelector.exact` and any `excerpt` must occur in the extracted text
+(whitespace runs compare as one space), a `TextPositionSelector` must lie inside one text segment
+and match its `excerpt`, and `FragmentSelector`, `CsvSelector` or `JsonPointerSelector` must equal a
+selector the adapter emitted. `not_found` exits with 1. Evidence without a matching source or with
+a selector type the adapter never produces is `unverifiable`; `--require-all` turns that into a
+failure as well. The report states that semantic support was not evaluated: a resolved anchor proves
+that the passage exists, not that it supports the claim.
+
 Run its focused regression suite with:
 
 ```bash

@@ -66,6 +66,7 @@ Spec 1.1 adds optional:
 | `merge_knowledge.py` | Perform an additive merge, validate it, archive the exact prior bytes and write mandatory JSON and Markdown diffs. |
 | `extract_source.py` | Normalize local TXT/MD, HTML, CSV/TSV, JSON and non-macro DOCX into hashed, located segments. |
 | `evaluate_golden.py` | Compare explicit graph projections with locally curated golden labels. |
+| `verify_evidence.py` | Resolve evidence quotes, positions and copied selectors against `extract_source.py` output. |
 | `validate_profile.py` | Validate versioned compiler policy separately from the persistence schema. |
 | `run_pipeline.py` | Run content-addressed validate/build stages with immutable receipts and resumable attempts. |
 | `serve_api.py` | Optional authenticated loopback-only HTTP and minimal MCP facade for validate/build. |
@@ -108,6 +109,10 @@ read as hardened OOXML without macros. PDF, encrypted/macro Office files, unknow
 UTF-8, unsafe archives and symlink escapes fail explicitly.
 
 This stage normalizes source material; it does not invent concepts or feed the runner automatically.
+After compilation, `verify_evidence.py graph.knowledge.json normalized.source.json` checks that
+every evidence anchor exists in the normalized source it names by `content_sha256`: quoted text
+must occur, positions must fall inside a segment and copied selectors must match. Unmatched records
+are reported as unverifiable, never as verified, and a found passage is not proof of support.
 Semantic compilation must be performed by an external agent/compiler using a validated
 `profiles/*.json` policy and writing the Spec 1.1 evidence/origin fields. `run_pipeline.py` starts
 only after a canonical `.knowledge.json` already exists.
