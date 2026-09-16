@@ -1043,14 +1043,25 @@ def _request_lock(output_root: Path, request_key: str):
         os.close(lock_dir_fd)
         raise PathSandboxError("request lock must be a regular file")
     handle = os.fdopen(lock_fd, "a+b")
+    # The import is resolved BEFORE the yield.  With it inside the same ``try``, an
+    # ImportError raised anywhere in the CALLER's with-block propagated into the
+    # generator at the yield, hit the ImportError handler and yielded a second time --
+    # so contextlib raised "generator didn't stop after throw" and masked the caller's
+    # real error.  Optional imports elsewhere in the toolchain make that reachable.
     try:
-        try:
-            import fcntl  # type: ignore
-
+        import fcntl  # type: ignore
+    except ImportError:  # pragma: no cover - exercised only on non-POSIX systems
+        fcntl = None  # type: ignore[assignment]
+    try:
+        if fcntl is not None:
             fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
-            yield
-            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
-        except ImportError:  # pragma: no cover - exercised only on non-POSIX systems
+            try:
+                yield
+            finally:
+                # An exception from the caller used to skip the unlock and leave it to
+                # handle.close(); releasing it here makes the pairing explicit.
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+        else:
             fallback_key = f"{output_root}:{lock_name}"
             with _FALLBACK_LOCKS_GUARD:
                 lock = _FALLBACK_LOCKS.setdefault(fallback_key, threading.Lock())
