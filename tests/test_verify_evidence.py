@@ -94,6 +94,31 @@ class VerifyEvidenceTests(unittest.TestCase):
         code, report = self._run(graph)
         self.assertEqual((code, report["counts"]["not_found"]), (1, 1))
 
+    def test_unicode_normalization_does_not_break_an_anchor(self):
+        (self.base / "note.txt").write_text("Die Gr\u00f6\u00dfe bleibt gleich.\n", encoding="utf-8")
+        normalized = extract_source.extract_source("note.txt", input_root=self.base)
+        graph = {"metadata": {"sources": [{"id": "n", "content_sha256": normalized["source"]["content_sha256"]}]},
+                 "evidence": [{"id": "e", "source": "n",
+                               "selector": {"type": "TextQuoteSelector", "exact": "Gro\u0308\u00dfe bleibt"}}]}
+        self.assertEqual(verify_evidence.verify(graph, [normalized])["counts"]["verified"], 1)
+
+    def test_narrowed_cell_ranges_and_json_containers_resolve(self):
+        (self.base / "people.csv").write_text("name,role\nAda,Engineer\n", encoding="utf-8")
+        (self.base / "config.json").write_text('{"deploy": {"region": "eu", "zones": 3}}', encoding="utf-8")
+        csv_doc = extract_source.extract_source("people.csv", input_root=self.base)
+        json_doc = extract_source.extract_source("config.json", input_root=self.base)
+        graph = {"metadata": {"sources": [
+            {"id": "c", "content_sha256": csv_doc["source"]["content_sha256"]},
+            {"id": "j", "content_sha256": json_doc["source"]["content_sha256"]}]},
+            "evidence": [
+                {"id": "cell", "source": "c", "selector": {"type": "CsvSelector", "sheet": "data", "cell_range": "B2"}},
+                {"id": "wide", "source": "c", "selector": {"type": "CsvSelector", "sheet": "data", "cell_range": "A2:C2"}},
+                {"id": "node", "source": "j", "selector": {"type": "JsonPointerSelector", "json_pointer": "/deploy"}},
+                {"id": "prefix", "source": "j", "selector": {"type": "JsonPointerSelector", "json_pointer": "/dep"}},
+            ]}
+        results = {r["evidence"]: r["status"] for r in verify_evidence.verify(graph, [csv_doc, json_doc])["results"]}
+        self.assertEqual(results, {"cell": "verified", "wide": "not_found", "node": "verified", "prefix": "not_found"})
+
     def test_unknown_source_is_unverifiable_not_verified(self):
         graph = copy.deepcopy(self.graph)
         for source in graph["metadata"]["sources"]:
