@@ -322,6 +322,18 @@ python3 scripts/evaluate_golden.py eval/golden_cases.json
 Golden Evaluation misst nur die ausdrücklich kuratierten Felder. Fehlende Open-World-Fakten,
 Wahrheit außerhalb der Quellen und Eignung für unbekannte Zwecke bleiben unbewertet.
 
+Wurden die Quellen mit `extract_source.py` normalisiert, zusätzlich die Anker prüfen:
+
+```bash
+python3 scripts/verify_evidence.py graph.knowledge.json normalized.source.json
+```
+
+`not_found` ist ein **ERROR**: Das Zitat, die Position oder der kopierte Selektor existiert in der
+angegebenen Quelle nicht. Evidence nicht umformulieren, bis sie „passt“, sondern die Stelle in der
+Quelle neu bestimmen oder den Beleg entfernen. `unverifiable` heißt nur, dass keine passende
+normalisierte Quelle oder kein prüfbarer Selektortyp vorlag; ein gefundener Anker belegt nicht, dass
+die Passage die Aussage stützt.
+
 ## Reproduzierbarer Runner
 
 Für operative Läufe den lokalen Runner verwenden:
@@ -362,7 +374,7 @@ Teile weiter anzeigen; Producer müssen streng validieren.
 | `SPEC.md` | Autoritativer Graphvertrag. |
 | `schema/knowledge.schema.json` | JSON-Schema-Spiegel. |
 | `profiles/default.json` | Standard-Compilerpolitik. |
-| `docs/EXTRACTION.md` | Lokale Adapter und Grenzen. |
+| `docs/EXTRACTION.md` | Lokale Adapter, Grenzen und Ankerprüfung. |
 | `docs/MERGE.md` | Merge-Identität, Konflikte, Archiv/Diff. |
 | `docs/EXPORTS.md` | Cypher/CTXT/Canvas-Mapping. |
 | `docs/RUNNER.md` | Receipts, Resume, API/MCP. |
