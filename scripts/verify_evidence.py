@@ -8,11 +8,13 @@ the document. This tool closes that gap mechanically, using the output of ``extr
 
 * evidence is matched to a normalized source only through an identical ``content_sha256``;
 * ``TextQuoteSelector.exact`` and an optional ``excerpt`` must occur in the normalized text
-  (whitespace runs compared as one space);
+  (compared after Unicode NFC normalization, with whitespace runs as one space);
 * ``TextPositionSelector`` ranges must lie inside one extracted text segment, and a present
   ``excerpt`` must equal that slice;
 * ``FragmentSelector``, ``CsvSelector`` and ``JsonPointerSelector`` must equal a selector the
   adapter emitted, because evidence is expected to copy segment selectors rather than invent them.
+  Two narrowings still resolve: a cell range inside an emitted row range of the same sheet, and a
+  JSON pointer to a container whose leaves the adapter emitted.
 
 Anything else is reported as ``unverifiable``, never as verified. A resolved anchor says that the
 passage exists; it does not say that the passage supports the claim.
@@ -23,6 +25,7 @@ import argparse
 import json
 import re
 import sys
+import unicodedata
 from pathlib import Path
 from typing import Any
 
@@ -33,6 +36,7 @@ import strict_json  # noqa: E402
 
 MAX_FILE_BYTES = 64 * 1024 * 1024
 WHITESPACE = re.compile(r"\s+")
+CELL_RANGE = re.compile(r"^([A-Z]+)([1-9][0-9]*)(?::([A-Z]+)([1-9][0-9]*))?$")
 IDENTITY_FIELDS = {
     "FragmentSelector": ("fragment",),
     "CsvSelector": ("sheet", "cell_range"),
@@ -45,7 +49,25 @@ class VerificationError(ValueError):
 
 
 def _collapse(value: str) -> str:
-    return WHITESPACE.sub(" ", value).strip()
+    return WHITESPACE.sub(" ", unicodedata.normalize("NFC", value)).strip()
+
+
+def _cell_box(cell_range: object) -> tuple[int, int, int, int] | None:
+    """Return (first column, first row, last column, last row) for ``A1`` or ``A1:C3``."""
+    match = CELL_RANGE.match(cell_range) if isinstance(cell_range, str) else None
+    if not match:
+        return None
+
+    def column(letters: str) -> int:
+        number = 0
+        for letter in letters:
+            number = number * 26 + ord(letter) - ord("A") + 1
+        return number
+
+    first_col, first_row = column(match.group(1)), int(match.group(2))
+    last_col = column(match.group(3)) if match.group(3) else first_col
+    last_row = int(match.group(4)) if match.group(4) else first_row
+    return first_col, first_row, last_col, last_row
 
 
 def _digest(value: object) -> str | None:
@@ -125,6 +147,23 @@ class _Index:
                 elif stype in IDENTITY_FIELDS:
                     self.identities.add((stype, tuple(selector.get(f) for f in IDENTITY_FIELDS[stype])))
 
+    def contains_cells(self, sheet: object, cell_range: object) -> bool:
+        box = _cell_box(cell_range)
+        if box is None:
+            return False
+        for stype, (emitted_sheet, emitted_range) in self.identities:
+            outer = _cell_box(emitted_range) if stype == "CsvSelector" and emitted_sheet == sheet else None
+            if outer and outer[0] <= box[0] <= box[2] <= outer[2] and outer[1] <= box[1] <= box[3] <= outer[3]:
+                return True
+        return False
+
+    def contains_container(self, pointer: object) -> bool:
+        if not isinstance(pointer, str):
+            return False
+        prefix = pointer + "/"
+        return any(stype == "JsonPointerSelector" and isinstance(values[0], str) and values[0].startswith(prefix)
+                   for stype, values in self.identities)
+
     def contains(self, quote: str) -> bool:
         needle = _collapse(quote)
         if not needle:
@@ -157,6 +196,10 @@ def _check_evidence(evidence: dict[str, Any], index: _Index) -> tuple[str, str]:
         key = (stype, tuple(selector.get(f) for f in IDENTITY_FIELDS[stype]))
         if key in index.identities:
             return "verified", "selector equals an extracted segment selector"
+        if stype == "CsvSelector" and index.contains_cells(selector.get("sheet"), selector.get("cell_range")):
+            return "verified", "cell range lies inside an extracted row range"
+        if stype == "JsonPointerSelector" and index.contains_container(selector.get("json_pointer")):
+            return "verified", "pointer names a container of extracted leaves"
         return "not_found", "selector matches no extracted segment selector"
     return "unverifiable", f"selector type {stype!r} is not produced by the local adapter"
 

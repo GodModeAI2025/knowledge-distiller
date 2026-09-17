@@ -197,9 +197,10 @@ python3 scripts/verify_evidence.py graph.knowledge.json normalized.source.json [
 
 Evidence is paired with a normalized source only when the graph source carries the identical
 `content_sha256`. `TextQuoteSelector.exact` and any `excerpt` must occur in the extracted text
-(whitespace runs compare as one space), a `TextPositionSelector` must lie inside one text segment
-and match its `excerpt`, and `FragmentSelector`, `CsvSelector` or `JsonPointerSelector` must equal a
-selector the adapter emitted. `not_found` exits with 1. Evidence without a matching source or with
+(compared after Unicode NFC normalization, whitespace runs as one space), a `TextPositionSelector`
+must lie inside one text segment and match its `excerpt`, and `FragmentSelector`, `CsvSelector` or
+`JsonPointerSelector` must equal a selector the adapter emitted. A cell range inside an emitted row
+range of the same sheet and a JSON pointer to a container of emitted leaves also resolve. `not_found` exits with 1. Evidence without a matching source or with
 a selector type the adapter never produces is `unverifiable`; `--require-all` turns that into a
 failure as well. The report states that semantic support was not evaluated: a resolved anchor proves
 that the passage exists, not that it supports the claim.
