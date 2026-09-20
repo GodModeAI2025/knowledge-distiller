@@ -88,7 +88,7 @@ def add_evidence(doc: dict, evidence_id: str, page: int = 1) -> dict:
 def empty_tracker() -> dict:
     return {
         "added": {}, "enriched": {}, "node_aliases": {}, "resource_enrichments": {},
-        "fact_aliases": {}, "recorded_fact_conflicts": [],
+        "fact_aliases": {}, "recorded_fact_conflicts": [], "_seen": {},
     }
 
 
@@ -354,6 +354,58 @@ class MergeContractCase(unittest.TestCase):
             f"four times the facts cost {large / small:.1f} times the work",
         )
 
+    def test_recording_a_change_keeps_first_seen_order_and_records_it_once(self) -> None:
+        tracker = empty_tracker()
+        for identity in ("beta", "alpha", "beta", "gamma", "alpha"):
+            mk._track(tracker, "added", "nodes", identity)
+        self.assertEqual(tracker["added"]["nodes"], ["beta", "alpha", "gamma"])
+
+        prefilled = empty_tracker()
+        prefilled["added"]["nodes"] = ["alpha", "beta"]
+        mk._track(prefilled, "added", "nodes", "alpha")
+        mk._track(prefilled, "added", "nodes", "gamma")
+        self.assertEqual(prefilled["added"]["nodes"], ["alpha", "beta", "gamma"])
+
+        mk._track(tracker, "enriched", "nodes", "beta")
+        self.assertEqual(tracker["added"]["nodes"], ["beta", "alpha", "gamma"])
+        self.assertEqual(tracker["enriched"]["nodes"], ["beta"])
+
+    def test_recording_changes_costs_the_same_per_change_at_any_size(self) -> None:
+        """Membership was answered by scanning the change list it was building."""
+        class Identity(str):
+            comparisons = 0
+
+            def __eq__(self, other: object) -> bool:
+                Identity.comparisons += 1
+                return str.__eq__(self, other)
+
+            def __hash__(self) -> int:
+                return str.__hash__(self)
+
+        count = 400
+        tracker = empty_tracker()
+        for index in range(count):
+            mk._track(tracker, "added", "nodes", Identity(f"node-{index}"))
+
+        self.assertEqual(len(tracker["added"]["nodes"]), count)
+        # Scanning the list would be about count**2 / 2 comparisons.
+        self.assertLess(
+            Identity.comparisons, count,
+            f"recording {count} changes cost {Identity.comparisons} comparisons",
+        )
+
+    def test_a_fact_identity_only_one_side_can_hash_is_still_compared(self) -> None:
+        """``{1} == frozenset({1})``, but only one of the two can be hashed."""
+        unhashable = {"id": "f1", "concept": {1}, "metric": "count", "value": "1"}
+        hashable = {"id": "f2", "concept": frozenset({1}), "metric": "count", "value": "2"}
+
+        for base, incoming in (([unhashable], [hashable]), ([hashable], [unhashable])):
+            _, _, generated = mk._merge_facts(
+                copy.deepcopy(base), copy.deepcopy(incoming),
+                empty_tracker(), conflict_mode="record",
+            )
+            self.assertEqual([conflict["facts"] for conflict in generated], [["f1", "f2"]])
+
     def test_indexed_fact_conflicts_keep_their_observable_order(self) -> None:
         base = fixture()
         base["facts"] = [
@@ -376,6 +428,33 @@ class MergeContractCase(unittest.TestCase):
             [["f1", "f4"], ["f2", "f4"], ["f3", "f4"],
              ["f1", "f5"], ["f2", "f5"], ["f3", "f5"], ["f4", "f5"]],
         )
+
+    def test_recorded_fact_conflicts_are_listed_once_in_the_order_generated(self) -> None:
+        base = fixture()
+        base["facts"] = [
+            dict(fact_population(1, "a")[0], id="f1", value="1"),
+            dict(fact_population(1, "a")[0], id="f2", value="2"),
+        ]
+        base = conform(base)
+        incoming = fixture()
+        incoming["facts"] = [
+            dict(fact_population(1, "a")[0], id="f3", value="3"),
+            dict(fact_population(1, "a")[0], id="f4", value="4"),
+        ]
+        incoming = conform(incoming)
+
+        merged, diff = mk.merge_documents(base, incoming)
+        recorded = diff["recorded_fact_conflicts"]
+        self.assertEqual(recorded, [conflict["id"] for conflict in merged["fact_conflicts"]])
+        self.assertEqual(len(recorded), len(set(recorded)))
+
+        # An incoming graph that already carries the conflict the merge is about
+        # to generate takes the other branch; the id is still listed once.
+        carried = copy.deepcopy(incoming)
+        carried["facts"] = copy.deepcopy(merged["facts"])
+        carried["fact_conflicts"] = copy.deepcopy(merged["fact_conflicts"])
+        _, diff_carried = mk.merge_documents(base, conform(carried))
+        self.assertEqual(diff_carried["recorded_fact_conflicts"], recorded)
 
     def test_enrichment_that_changes_a_logical_key_is_seen_by_later_facts(self) -> None:
         """A merged fact is compared under its merged identity, not its prior one."""

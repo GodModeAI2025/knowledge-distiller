@@ -203,9 +203,22 @@ def _require_valid(doc: dict, label: str, *, prev: dict | None = None) -> dict:
 
 
 def _track(tracker: dict, section: str, collection: str, identity: str) -> None:
+    """Append ``identity`` to a change list once, in first-seen order.
+
+    The list is the reported order and stays a list. Membership is answered by a
+    set held in the tracker's private ``_seen`` scratch, because scanning the
+    list would make recording N changes cost N squared -- the same shape as the
+    comparison this module already indexes away.
+    """
     values = tracker[section].setdefault(collection, [])
-    if identity not in values:
-        values.append(identity)
+    seen_by_collection = tracker.setdefault("_seen", {})
+    seen = seen_by_collection.get((section, collection))
+    if seen is None:
+        seen = seen_by_collection[(section, collection)] = set(values)
+    if identity in seen:
+        return
+    seen.add(identity)
+    values.append(identity)
 
 
 def _merge_sources(base: list, incoming: list, tracker: dict) -> list:
@@ -499,18 +512,29 @@ def _merge_facts(
 
         The validator requires ``concept`` and ``metric`` to be strings, so an
         unhashable key is only reachable through the Python API. It gets the old
-        linear answer from a side list; such a key can never equal a hashable one.
+        linear answer from a side list. No JSON value that cannot be hashed can
+        equal one that can -- a list or dict never equals a string or a number --
+        but a non-JSON type could (``{1} == frozenset({1})``), so once any
+        unhashable key exists both stores are consulted rather than assumed
+        disjoint. Both scans stay empty for anything a document can express.
         """
         try:
             hash(key)
         except TypeError:
-            for existing, positions in unhashable:
-                if existing == key:
-                    return positions
-            positions = []
-            unhashable.append((key, positions))
-            return positions
-        return hashed.setdefault(key, [])
+            hashable = False
+        else:
+            hashable = True
+        for existing, positions in unhashable:
+            if existing == key:
+                return positions
+        if hashable:
+            return hashed.setdefault(key, [])
+        for existing, positions in hashed.items():
+            if existing == key:
+                return positions
+        positions = []
+        unhashable.append((key, positions))
+        return positions
 
     def index_fact(position: int) -> None:
         key = _logical_fact_key(result[position])
@@ -641,13 +665,19 @@ def _add_generated_conflicts(existing: list, generated: list, tracker: dict) -> 
         for index, item in enumerate(result)
     }
     by_id = {item["id"]: index for index, item in enumerate(result)}
+    # The recorded list keeps its order; membership comes from a set, because a
+    # scan per generated conflict would be quadratic in a number that is itself
+    # quadratic in the facts.
+    recorded = tracker["recorded_fact_conflicts"]
+    recorded_ids = set(recorded)
     for conflict in generated:
         pair = (conflict["relation"], frozenset(conflict["facts"]))
         if pair in by_pair:
             index = by_pair[pair]
             existing_id = result[index]["id"]
-            if existing_id not in tracker["recorded_fact_conflicts"]:
-                tracker["recorded_fact_conflicts"].append(existing_id)
+            if existing_id not in recorded_ids:
+                recorded_ids.add(existing_id)
+                recorded.append(existing_id)
             merged_evidence = _stable_union(
                 result[index].get("evidence", []) or [], conflict.get("evidence", []) or []
             )
@@ -663,8 +693,9 @@ def _add_generated_conflicts(existing: list, generated: list, tracker: dict) -> 
             by_pair[pair] = len(result)
             result.append(copy.deepcopy(conflict))
             _track(tracker, "added", "fact_conflicts", cid)
-            if cid not in tracker["recorded_fact_conflicts"]:
-                tracker["recorded_fact_conflicts"].append(cid)
+            if cid not in recorded_ids:
+                recorded_ids.add(cid)
+                recorded.append(cid)
     return result
 
 
@@ -721,6 +752,9 @@ def merge_documents(
         "resource_enrichments": {},
         "fact_aliases": {},
         "recorded_fact_conflicts": [],
+        # Scratch for ``_track``: membership sets beside the change lists above.
+        # Never read into the diff; the underscore marks it as not reportable.
+        "_seen": {},
     }
     sources = _merge_sources(
         base_doc["metadata"].get("sources", []),
