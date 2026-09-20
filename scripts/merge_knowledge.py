@@ -802,7 +802,10 @@ def _atomic_write(path: Path, data: bytes) -> None:
             handle.write(data)
             handle.flush()
             os.fsync(handle.fileno())
-        os.chmod(tmp_name, 0o644)
+            # On the descriptor, not on the name: the mode belongs to
+            # the file just written, not to whatever carries that name
+            # by the time the call runs.
+            os.fchmod(handle.fileno(), 0o644)
         os.replace(tmp_name, path)
         tmp_name = None
     finally:
@@ -822,7 +825,10 @@ def _atomic_create(path: Path, data: bytes) -> None:
             handle.write(data)
             handle.flush()
             os.fsync(handle.fileno())
-        os.chmod(tmp_name, 0o644)
+            # On the descriptor, not on the name: the mode belongs to
+            # the file just written, not to whatever carries that name
+            # by the time the call runs.
+            os.fchmod(handle.fileno(), 0o644)
         try:
             os.link(tmp_name, path)
         except FileExistsError as exc:
