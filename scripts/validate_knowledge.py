@@ -86,6 +86,9 @@ CITATION_MARKER = re.compile(r"\[(\d+)\]")
 # number that is merely out of range: converting it would raise before it
 # could be judged. It is reported and never converted.
 MAX_CITATION_DIGITS = 9
+# The recursive audits below share the loader's structural bound, so a document
+# the loader accepted is always shallow enough for them to finish.
+MAX_STRUCTURE_DEPTH = strict_json.MAX_STRUCTURE_DEPTH
 WIKILINK = re.compile(r"\[\[([^\]]+)\]\]")
 SHA256 = re.compile(r"^(?:sha256:)?[A-Fa-f0-9]{64}$")
 ISO_DATE = re.compile(
@@ -199,13 +202,20 @@ def _check_private_reasoning_fields(value: object, where: str, rep: Report) -> N
     security exception: producers must use bounded ``derivation`` and ``explanation`` records.
     """
     seen: set[int] = set()
+    too_deep: list[str] = []
 
-    def visit(item: object, path: str) -> None:
+    def visit(item: object, path: str, depth: int) -> None:
         if isinstance(item, (dict, list)):
             identity = id(item)
             if identity in seen:
                 return
             seen.add(identity)
+            if depth >= MAX_STRUCTURE_DEPTH:
+                # Report the bound and stop descending instead of letting the walk
+                # run the interpreter out of stack. Core validation still completes.
+                if not too_deep:
+                    too_deep.append(path)
+                return
         if isinstance(item, dict):
             for key, child in item.items():
                 child_path = f"{path}.{key}" if path else str(key)
@@ -214,12 +224,18 @@ def _check_private_reasoning_fields(value: object, where: str, rep: Report) -> N
                         f"{child_path}: private reasoning/scratchpad fields are forbidden; "
                         "use bounded explanation/derivation metadata"
                     )
-                visit(child, child_path)
+                visit(child, child_path, depth + 1)
         elif isinstance(item, list):
             for index, child in enumerate(item):
-                visit(child, f"{path}[{index}]")
+                visit(child, f"{path}[{index}]", depth + 1)
 
-    visit(value, where)
+    visit(value, where, 0)
+    if too_deep:
+        rep.err(
+            f"{too_deep[0]}: structure nesting exceeds the safe depth limit of "
+            f"{MAX_STRUCTURE_DEPTH}; nothing below it was audited for private "
+            "reasoning fields"
+        )
 
 
 def _check_unique_id(obj: object, seen: set[str], where: str, rep: Report) -> str | None:

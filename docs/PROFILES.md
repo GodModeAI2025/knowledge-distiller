@@ -185,7 +185,9 @@ and conditional opt-in rules mirror the manual safety contract.
 Exit status is `0` for a valid profile, `1` for a loaded but invalid profile and `2` when strict
 local JSON loading fails. Output ordering is deterministic. Loading rejects URLs and URI schemes,
 missing/non-file paths, profiles over 1 MiB, invalid UTF-8, malformed JSON, duplicate keys,
-`NaN`/`Infinity`, invalid Unicode surrogates and non-object roots.
+`NaN`/`Infinity`, invalid Unicode surrogates, nesting deeper than 256 containers and non-object
+roots. A profile handed to `validate` directly rather than loaded from disk reports the depth bound
+as an ordinary error, and the rest of the profile is still checked.
 
 Unknown keys are warnings and have no effect. Consumers must ignore them until a supported profile
 version defines their meaning. Keys that look like prompt, private-reasoning trace/scratchpad,

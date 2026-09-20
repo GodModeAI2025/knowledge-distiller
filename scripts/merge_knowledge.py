@@ -9,6 +9,7 @@ Markdown deltas. See ``docs/MERGE.md``.
 from __future__ import annotations
 
 import argparse
+import bisect
 import copy
 import hashlib
 import json
@@ -39,6 +40,11 @@ MARKER = re.compile(r"\[(\d+)\]")
 MAX_CITATION_DIGITS = 9
 ARCHIVE_NAME = re.compile(r"\.v(\d{4,})\.[0-9a-f]{12}\.json$")
 MAX_INPUT_BYTES = 64 * 1024 * 1024
+# Shared with the loader. Every step of the merge walks the graph recursively --
+# ``copy.deepcopy``, ``_merge_value``, ``json.dumps`` in ``_canon`` -- so a graph
+# that nests deeper than this is refused up front instead of aborting somewhere
+# in the middle with an interpreter-level RecursionError.
+MAX_STRUCTURE_DEPTH = strict_json.MAX_STRUCTURE_DEPTH
 _MISSING = object()
 
 
@@ -81,8 +87,42 @@ def _stable_union(left: list, right: list) -> list:
     return result
 
 
-def _merge_value(left: object, right: object, where: str) -> object:
+def _exceeds_structure_depth(value: object, limit: int = MAX_STRUCTURE_DEPTH) -> bool:
+    """Report whether ``value`` nests deeper than ``limit`` containers.
+
+    Deliberately iterative: a recursive probe would be the very failure it exists
+    to prevent. A self-referential structure -- impossible from JSON, reachable
+    through the Python API -- terminates here as "too deep" rather than looping.
+    """
+    stack: list[tuple[object, int]] = [(value, 0)]
+    while stack:
+        item, depth = stack.pop()
+        if not isinstance(item, (dict, list)):
+            continue
+        if depth >= limit:
+            return True
+        children = item.values() if isinstance(item, dict) else item
+        for child in children:
+            if isinstance(child, (dict, list)):
+                stack.append((child, depth + 1))
+    return False
+
+
+def _require_bounded_depth(doc: object, label: str) -> None:
+    if _exceeds_structure_depth(doc):
+        raise MergeValidationError(
+            f"{label}: structure nesting exceeds the safe depth limit of "
+            f"{MAX_STRUCTURE_DEPTH}"
+        )
+
+
+def _merge_value(left: object, right: object, where: str, depth: int = 0) -> object:
     """Additively combine compatible values or fail instead of choosing one silently."""
+    if depth >= MAX_STRUCTURE_DEPTH:
+        raise MergeValidationError(
+            f"{where}: structure nesting exceeds the safe depth limit of "
+            f"{MAX_STRUCTURE_DEPTH}"
+        )
     if _canon(left) == _canon(right):
         return copy.deepcopy(left)
     if left is None or left == "":
@@ -97,7 +137,7 @@ def _merge_value(left: object, right: object, where: str) -> object:
             if key not in result:
                 result[key] = copy.deepcopy(value)
             else:
-                result[key] = _merge_value(result[key], value, f"{where}.{key}")
+                result[key] = _merge_value(result[key], value, f"{where}.{key}", depth + 1)
         return result
     raise PayloadConflictError(
         f"{where}: conflicting payloads {left!r} and {right!r}; merge refused"
@@ -163,9 +203,22 @@ def _require_valid(doc: dict, label: str, *, prev: dict | None = None) -> dict:
 
 
 def _track(tracker: dict, section: str, collection: str, identity: str) -> None:
+    """Append ``identity`` to a change list once, in first-seen order.
+
+    The list is the reported order and stays a list. Membership is answered by a
+    set held in the tracker's private ``_seen`` scratch, because scanning the
+    list would make recording N changes cost N squared -- the same shape as the
+    comparison this module already indexes away.
+    """
     values = tracker[section].setdefault(collection, [])
-    if identity not in values:
-        values.append(identity)
+    seen_by_collection = tracker.setdefault("_seen", {})
+    seen = seen_by_collection.get((section, collection))
+    if seen is None:
+        seen = seen_by_collection[(section, collection)] = set(values)
+    if identity in seen:
+        return
+    seen.add(identity)
+    values.append(identity)
 
 
 def _merge_sources(base: list, incoming: list, tracker: dict) -> list:
@@ -443,12 +496,81 @@ def _merge_facts(
     by_id = {item["id"]: index for index, item in enumerate(result)}
     aliases: dict[str, str] = {}
     generated: list[dict] = []
+    generated_pairs: set[frozenset] = set()
+
+    # Positions in ``result`` grouped by logical fact key, so that finding the
+    # facts a newcomer contradicts is a lookup instead of a scan over everything
+    # merged so far, and ``_logical_fact_key`` is computed once per record rather
+    # than twice per pair. Buckets stay sorted, so the facts are still visited in
+    # ``result`` order and the conflict records keep their observable sequence.
+    hashed: dict[tuple, list[int]] = {}
+    unhashable: list[tuple[tuple, list[int]]] = []
+    keys: list[tuple | None] = []
+
+    def bucket(key: tuple) -> list[int]:
+        """The position list for ``key``, created on first use.
+
+        The validator requires ``concept`` and ``metric`` to be strings, so an
+        unhashable key is only reachable through the Python API. It gets the old
+        linear answer from a side list. No JSON value that cannot be hashed can
+        equal one that can -- a list or dict never equals a string or a number --
+        but a non-JSON type could (``{1} == frozenset({1})``), so once any
+        unhashable key exists both stores are consulted rather than assumed
+        disjoint. Both scans stay empty for anything a document can express.
+        """
+        try:
+            hash(key)
+        except TypeError:
+            hashable = False
+        else:
+            hashable = True
+        for existing, positions in unhashable:
+            if existing == key:
+                return positions
+        if hashable:
+            return hashed.setdefault(key, [])
+        for existing, positions in hashed.items():
+            if existing == key:
+                return positions
+        positions = []
+        unhashable.append((key, positions))
+        return positions
+
+    def index_fact(position: int) -> None:
+        key = _logical_fact_key(result[position])
+        keys.append(key)
+        if key is not None:
+            bisect.insort(bucket(key), position)
+
+    def reindex_fact(position: int) -> None:
+        key = _logical_fact_key(result[position])
+        if key == keys[position]:
+            return
+        if keys[position] is not None:
+            bucket(keys[position]).remove(position)
+        keys[position] = key
+        if key is not None:
+            bisect.insort(bucket(key), position)
+
+    def contradicted_by(fact: dict) -> list[dict]:
+        key = _logical_fact_key(fact)
+        if key is None:
+            return []
+        value = fact.get("value")
+        return [
+            result[position]
+            for position in bucket(key)
+            if result[position].get("value") != value
+        ]
+
+    for position in range(len(result)):
+        index_fact(position)
 
     def note_conflict(left: dict, right: dict) -> None:
         pair = frozenset((left["id"], right["id"]))
-        if not any(frozenset(item["facts"]) == pair for item in generated):
-            conflict = _generated_conflict(left, right)
-            generated.append(conflict)
+        if pair not in generated_pairs:
+            generated_pairs.add(pair)
+            generated.append(_generated_conflict(left, right))
 
     for original in incoming:
         fact = copy.deepcopy(original)
@@ -470,15 +592,11 @@ def _merge_facts(
                         )
                     retained = result[by_id[retained_id]]
                 else:
-                    for prior in result:
-                        if (
-                            _logical_fact_key(prior) is not None
-                            and _logical_fact_key(prior) == _logical_fact_key(fact)
-                            and prior.get("value") != fact.get("value")
-                        ):
-                            note_conflict(prior, fact)
+                    for prior in contradicted_by(fact):
+                        note_conflict(prior, fact)
                     by_id[retained_id] = len(result)
                     result.append(fact)
+                    index_fact(len(result) - 1)
                     retained = fact
                     _track(tracker, "added", "facts", retained_id)
                 note_conflict(result[index], retained)
@@ -486,19 +604,16 @@ def _merge_facts(
             aliases[fid] = fid
             if _canon(merged) != _canon(result[index]):
                 result[index] = merged
+                reindex_fact(index)
                 _track(tracker, "enriched", "facts", fid)
             continue
 
         aliases[fid] = fid
-        for prior in result:
-            if (
-                _logical_fact_key(prior) is not None
-                and _logical_fact_key(prior) == _logical_fact_key(fact)
-                and prior.get("value") != fact.get("value")
-            ):
-                note_conflict(prior, fact)
+        for prior in contradicted_by(fact):
+            note_conflict(prior, fact)
         by_id[fid] = len(result)
         result.append(fact)
+        index_fact(len(result) - 1)
         _track(tracker, "added", "facts", fid)
     return result, aliases, generated
 
@@ -550,13 +665,19 @@ def _add_generated_conflicts(existing: list, generated: list, tracker: dict) -> 
         for index, item in enumerate(result)
     }
     by_id = {item["id"]: index for index, item in enumerate(result)}
+    # The recorded list keeps its order; membership comes from a set, because a
+    # scan per generated conflict would be quadratic in a number that is itself
+    # quadratic in the facts.
+    recorded = tracker["recorded_fact_conflicts"]
+    recorded_ids = set(recorded)
     for conflict in generated:
         pair = (conflict["relation"], frozenset(conflict["facts"]))
         if pair in by_pair:
             index = by_pair[pair]
             existing_id = result[index]["id"]
-            if existing_id not in tracker["recorded_fact_conflicts"]:
-                tracker["recorded_fact_conflicts"].append(existing_id)
+            if existing_id not in recorded_ids:
+                recorded_ids.add(existing_id)
+                recorded.append(existing_id)
             merged_evidence = _stable_union(
                 result[index].get("evidence", []) or [], conflict.get("evidence", []) or []
             )
@@ -572,8 +693,9 @@ def _add_generated_conflicts(existing: list, generated: list, tracker: dict) -> 
             by_pair[pair] = len(result)
             result.append(copy.deepcopy(conflict))
             _track(tracker, "added", "fact_conflicts", cid)
-            if cid not in tracker["recorded_fact_conflicts"]:
-                tracker["recorded_fact_conflicts"].append(cid)
+            if cid not in recorded_ids:
+                recorded_ids.add(cid)
+                recorded.append(cid)
     return result
 
 
@@ -613,6 +735,8 @@ def merge_documents(
     """Return ``(merged_graph, machine_diff)`` without mutating either input."""
     if fact_conflicts not in {"error", "record"}:
         raise ValueError("fact_conflicts must be 'error' or 'record'")
+    _require_bounded_depth(base, "base graph")
+    _require_bounded_depth(incoming, "incoming graph")
     base_doc = copy.deepcopy(base)
     incoming_doc = copy.deepcopy(incoming)
     base_input_hash = _sha_document(base_doc)
@@ -628,6 +752,9 @@ def merge_documents(
         "resource_enrichments": {},
         "fact_aliases": {},
         "recorded_fact_conflicts": [],
+        # Scratch for ``_track``: membership sets beside the change lists above.
+        # Never read into the diff; the underscore marks it as not reportable.
+        "_seen": {},
     }
     sources = _merge_sources(
         base_doc["metadata"].get("sources", []),

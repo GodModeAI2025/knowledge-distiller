@@ -25,6 +25,16 @@ MAX_NUMBER_CHARS = 4_300
 #: itself may raise or disable it, but no caller reads without a bound.
 MAX_FILE_BYTES = 64 * 1024 * 1024
 
+#: The house limit on structural nesting, the number ``extract_source`` already
+#: applies to a JSON source document.  Everything downstream of this loader walks
+#: a graph recursively -- the validators, the private-field audit,
+#: ``copy.deepcopy``, ``json.dumps`` -- and the hungriest of them spends two
+#: interpreter frames per level, so an accepted document has to stay well inside
+#: the recursion limit for all of them.  Without this bound the only thing between
+#: a nested document and a bare ``RecursionError`` traceback is how much stack the
+#: caller happens to have left, which is not a contract.
+MAX_STRUCTURE_DEPTH = 256
+
 
 def _object_without_duplicates(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     result: dict[str, Any] = {}
@@ -58,7 +68,7 @@ def _has_surrogate(value: str) -> bool:
     return any(0xD800 <= ord(character) <= 0xDFFF for character in value)
 
 
-def _validate_tree(value: Any, location: str = "$") -> None:
+def _validate_tree(value: Any, location: str = "$", depth: int = 0) -> None:
     if isinstance(value, float):
         if not math.isfinite(value):
             raise StrictJsonError(f"{location}: non-finite number is not valid JSON")
@@ -67,9 +77,15 @@ def _validate_tree(value: Any, location: str = "$") -> None:
         if _has_surrogate(value):
             raise StrictJsonError(f"{location}: isolated Unicode surrogate is not allowed")
         return
+    if isinstance(value, (list, dict)) and depth >= MAX_STRUCTURE_DEPTH:
+        # No location: at this depth it would be several kilobytes of brackets,
+        # and the offending structure is identified well enough by the limit.
+        raise StrictJsonError(
+            f"JSON nesting is too deep; the safe depth limit is {MAX_STRUCTURE_DEPTH}"
+        )
     if isinstance(value, list):
         for index, item in enumerate(value):
-            _validate_tree(item, f"{location}[{index}]")
+            _validate_tree(item, f"{location}[{index}]", depth + 1)
         return
     if isinstance(value, dict):
         for key, item in value.items():
@@ -77,11 +93,15 @@ def _validate_tree(value: Any, location: str = "$") -> None:
                 raise StrictJsonError(
                     f"{location}: object key contains an isolated Unicode surrogate"
                 )
-            _validate_tree(item, f"{location}.{key}")
+            _validate_tree(item, f"{location}.{key}", depth + 1)
 
 
 def loads(data: str | bytes | bytearray, *, source: str = "<string>") -> Any:
-    """Parse strict JSON and identify ``source`` in every expected failure."""
+    """Parse strict JSON and identify ``source`` in every expected failure.
+
+    Nesting deeper than :data:`MAX_STRUCTURE_DEPTH` is rejected here rather than
+    left to whichever recursive consumer runs out of stack first.
+    """
     try:
         if isinstance(data, (bytes, bytearray)):
             text = bytes(data).decode("utf-8", errors="strict")

@@ -152,7 +152,8 @@ CSV uses a fixed delimiter selected by the suffix; it does not use dialect sniff
 starts with `=`, `+`, `-`, or `@` remains literal text and is never interpreted as a formula.
 
 JSON rejects duplicate object keys, `NaN`, `Infinity`, invalid syntax, lone Unicode surrogates, and
-unsafe nesting instead of accepting implementation-specific values. Sorting object keys makes
+nesting deeper than 256 containers instead of accepting implementation-specific values. That depth
+is the house bound, shared with every graph loader in the toolchain. Sorting object keys makes
 segment order independent of source key order; array order remains semantic.
 
 DOCX is read directly from the OOXML ZIP with `zipfile` and `xml.etree.ElementTree`. Nothing is

@@ -1,7 +1,9 @@
 """Focused contract, conflict and file-safety tests for deterministic graph merging."""
 from __future__ import annotations
 
+import contextlib
 import copy
+import io
 import json
 import sys
 import tempfile
@@ -81,6 +83,35 @@ def add_evidence(doc: dict, evidence_id: str, page: int = 1) -> dict:
         "review_status": "unreviewed",
     })
     return doc
+
+
+def empty_tracker() -> dict:
+    return {
+        "added": {}, "enriched": {}, "node_aliases": {}, "resource_enrichments": {},
+        "fact_aliases": {}, "recorded_fact_conflicts": [], "_seen": {},
+    }
+
+
+def fact_population(count: int, prefix: str, *, shared_key: bool = True) -> list:
+    """``count`` facts; with ``shared_key`` false every fact has its own identity."""
+    return [
+        {
+            "id": f"{prefix}-{index}", "statement": f"Fact {index}. [1]", "value": str(index),
+            "confidence": "high", "source": "s1",
+            "concept": "alpha" if shared_key else f"concept-{index}", "metric": "count",
+        }
+        for index in range(count)
+    ]
+
+
+def nested_extension(depth: int, leaf: str = "leaf") -> dict:
+    root: dict = {}
+    cursor = root
+    for _ in range(depth - 1):
+        cursor["extension"] = {}
+        cursor = cursor["extension"]
+    cursor["extension"] = leaf
+    return root
 
 
 class MergeContractCase(unittest.TestCase):
@@ -293,6 +324,227 @@ class MergeContractCase(unittest.TestCase):
         repeated, _ = mk.merge_documents(first_graph, incoming)
         self.assertEqual(first_graph, repeated)
 
+    def test_fact_merge_work_grows_with_the_population_not_with_its_square(self) -> None:
+        """The pairwise scan made an N-fact merge cost N**2 logical-key computations."""
+        def key_computations(count: int) -> int:
+            original = mk._logical_fact_key
+            counter = [0]
+
+            def counting(fact: dict):
+                counter[0] += 1
+                return original(fact)
+
+            mk._logical_fact_key = counting
+            try:
+                mk._merge_facts(
+                    fact_population(count, "base", shared_key=False),
+                    fact_population(count, "inc", shared_key=False),
+                    empty_tracker(), conflict_mode="error",
+                )
+            finally:
+                mk._logical_fact_key = original
+            return counter[0]
+
+        small = key_computations(100)
+        large = key_computations(400)
+        self.assertGreater(small, 0)
+        # Quadratic would be a factor of about sixteen for four times the input.
+        self.assertLessEqual(
+            large, small * 6,
+            f"four times the facts cost {large / small:.1f} times the work",
+        )
+
+    def test_recording_a_change_keeps_first_seen_order_and_records_it_once(self) -> None:
+        tracker = empty_tracker()
+        for identity in ("beta", "alpha", "beta", "gamma", "alpha"):
+            mk._track(tracker, "added", "nodes", identity)
+        self.assertEqual(tracker["added"]["nodes"], ["beta", "alpha", "gamma"])
+
+        prefilled = empty_tracker()
+        prefilled["added"]["nodes"] = ["alpha", "beta"]
+        mk._track(prefilled, "added", "nodes", "alpha")
+        mk._track(prefilled, "added", "nodes", "gamma")
+        self.assertEqual(prefilled["added"]["nodes"], ["alpha", "beta", "gamma"])
+
+        mk._track(tracker, "enriched", "nodes", "beta")
+        self.assertEqual(tracker["added"]["nodes"], ["beta", "alpha", "gamma"])
+        self.assertEqual(tracker["enriched"]["nodes"], ["beta"])
+
+    def test_recording_changes_costs_the_same_per_change_at_any_size(self) -> None:
+        """Membership was answered by scanning the change list it was building."""
+        class Identity(str):
+            comparisons = 0
+
+            def __eq__(self, other: object) -> bool:
+                Identity.comparisons += 1
+                return str.__eq__(self, other)
+
+            def __hash__(self) -> int:
+                return str.__hash__(self)
+
+        count = 400
+        tracker = empty_tracker()
+        for index in range(count):
+            mk._track(tracker, "added", "nodes", Identity(f"node-{index}"))
+
+        self.assertEqual(len(tracker["added"]["nodes"]), count)
+        # Scanning the list would be about count**2 / 2 comparisons.
+        self.assertLess(
+            Identity.comparisons, count,
+            f"recording {count} changes cost {Identity.comparisons} comparisons",
+        )
+
+    def test_a_fact_identity_only_one_side_can_hash_is_still_compared(self) -> None:
+        """``{1} == frozenset({1})``, but only one of the two can be hashed."""
+        unhashable = {"id": "f1", "concept": {1}, "metric": "count", "value": "1"}
+        hashable = {"id": "f2", "concept": frozenset({1}), "metric": "count", "value": "2"}
+
+        for base, incoming in (([unhashable], [hashable]), ([hashable], [unhashable])):
+            _, _, generated = mk._merge_facts(
+                copy.deepcopy(base), copy.deepcopy(incoming),
+                empty_tracker(), conflict_mode="record",
+            )
+            self.assertEqual([conflict["facts"] for conflict in generated], [["f1", "f2"]])
+
+    def test_indexed_fact_conflicts_keep_their_observable_order(self) -> None:
+        base = fixture()
+        base["facts"] = [
+            dict(fact_population(1, "a")[0], id="f1", value="1"),
+            dict(fact_population(1, "a")[0], id="f2", value="2"),
+            dict(fact_population(1, "a")[0], id="f3", value="3"),
+        ]
+        base = conform(base)
+        incoming = fixture()
+        incoming["facts"] = [
+            dict(fact_population(1, "a")[0], id="f4", value="4"),
+            dict(fact_population(1, "a")[0], id="f5", value="5"),
+        ]
+        incoming = conform(incoming)
+
+        merged, _ = mk.merge_documents(base, incoming)
+
+        self.assertEqual(
+            [conflict["facts"] for conflict in merged["fact_conflicts"]],
+            [["f1", "f4"], ["f2", "f4"], ["f3", "f4"],
+             ["f1", "f5"], ["f2", "f5"], ["f3", "f5"], ["f4", "f5"]],
+        )
+
+    def test_recorded_fact_conflicts_are_listed_once_in_the_order_generated(self) -> None:
+        base = fixture()
+        base["facts"] = [
+            dict(fact_population(1, "a")[0], id="f1", value="1"),
+            dict(fact_population(1, "a")[0], id="f2", value="2"),
+        ]
+        base = conform(base)
+        incoming = fixture()
+        incoming["facts"] = [
+            dict(fact_population(1, "a")[0], id="f3", value="3"),
+            dict(fact_population(1, "a")[0], id="f4", value="4"),
+        ]
+        incoming = conform(incoming)
+
+        merged, diff = mk.merge_documents(base, incoming)
+        recorded = diff["recorded_fact_conflicts"]
+        self.assertEqual(recorded, [conflict["id"] for conflict in merged["fact_conflicts"]])
+        self.assertEqual(len(recorded), len(set(recorded)))
+
+        # An incoming graph that already carries the conflict the merge is about
+        # to generate takes the other branch; the id is still listed once.
+        carried = copy.deepcopy(incoming)
+        carried["facts"] = copy.deepcopy(merged["facts"])
+        carried["fact_conflicts"] = copy.deepcopy(merged["fact_conflicts"])
+        _, diff_carried = mk.merge_documents(base, conform(carried))
+        self.assertEqual(diff_carried["recorded_fact_conflicts"], recorded)
+
+    def test_enrichment_that_changes_a_logical_key_is_seen_by_later_facts(self) -> None:
+        """A merged fact is compared under its merged identity, not its prior one."""
+        period = {"source_date": "2026-03", "source_period": None, "valid_from": "2026-03",
+                  "valid_until": None, "temporal_confidence": "explicit"}
+        base = fixture()
+        base["facts"] = [dict(fact_population(1, "a")[0], id="f1", value="1")]
+        base = conform(base)
+        incoming = fixture()
+        incoming["facts"] = [
+            dict(fact_population(1, "a")[0], id="f1", value="1", temporal=period),
+            dict(fact_population(1, "a")[0], id="f2", value="2", temporal=period),
+        ]
+        incoming = conform(incoming)
+
+        merged, _ = mk.merge_documents(base, incoming)
+
+        self.assertEqual(merged["facts"][0]["temporal"], period)
+        self.assertEqual(
+            [conflict["facts"] for conflict in merged["fact_conflicts"]], [["f1", "f2"]]
+        )
+
+    def test_an_unhashable_fact_identity_is_still_compared_by_equality(self) -> None:
+        """The index must not turn a malformed concept/metric into a TypeError."""
+        def fact(fid: str, concept, value: str) -> dict:
+            return {"id": fid, "statement": "s", "value": value, "confidence": "high",
+                    "source": "s1", "concept": concept, "metric": "count"}
+
+        result, aliases, generated = mk._merge_facts(
+            [fact("f1", ["a"], "1"), fact("f2", {"k": 1}, "1")],
+            [fact("f3", ["a"], "2"), fact("f4", {"k": 1}, "2"), fact("f5", ["b"], "2")],
+            empty_tracker(), conflict_mode="error",
+        )
+
+        self.assertEqual([item["id"] for item in result], ["f1", "f2", "f3", "f4", "f5"])
+        self.assertEqual(
+            [conflict["facts"] for conflict in generated], [["f1", "f3"], ["f2", "f4"]]
+        )
+        self.assertEqual(set(aliases), {"f3", "f4", "f5"})
+
+    def test_numerically_equal_fact_identities_still_match(self) -> None:
+        """``1``, ``True`` and ``1.0`` compared equal before and must keep doing so."""
+        def fact(fid: str, concept, value: str) -> dict:
+            return {"id": fid, "statement": "s", "value": value, "confidence": "high",
+                    "source": "s1", "concept": concept, "metric": "count"}
+
+        _, _, generated = mk._merge_facts(
+            [fact("f1", 1, "1")],
+            [fact("f2", True, "2"), fact("f3", 1.0, "3")],
+            empty_tracker(), conflict_mode="error",
+        )
+
+        self.assertEqual(
+            [conflict["facts"] for conflict in generated],
+            [["f1", "f2"], ["f1", "f3"], ["f2", "f3"]],
+        )
+
+    def test_graph_nested_past_the_depth_limit_is_refused_with_a_message(self) -> None:
+        incoming = fixture()
+        incoming["extension"] = nested_extension(mk.MAX_STRUCTURE_DEPTH + 1)
+        with self.assertRaisesRegex(mk.MergeValidationError, "nesting exceeds the safe depth"):
+            mk.merge_documents(fixture(), incoming)
+        with self.assertRaisesRegex(mk.MergeValidationError, "base graph"):
+            mk.merge_documents(incoming, fixture())
+
+    def test_a_graph_at_the_depth_limit_is_not_refused(self) -> None:
+        """The bound must not be so tight that a document sitting on it is rejected."""
+        doc = fixture()
+        doc["extension"] = nested_extension(mk.MAX_STRUCTURE_DEPTH - 1)
+        self.assertFalse(mk._exceeds_structure_depth(doc))
+        self.assertEqual(
+            mk._merge_value(doc["extension"], copy.deepcopy(doc["extension"]), "$"),
+            doc["extension"],
+            "the recursive merge must still complete at the limit",
+        )
+        doc["extension"] = nested_extension(mk.MAX_STRUCTURE_DEPTH)
+        self.assertTrue(mk._exceeds_structure_depth(doc))
+
+    def test_merge_value_refuses_to_recurse_past_the_depth_limit(self) -> None:
+        left = nested_extension(mk.MAX_STRUCTURE_DEPTH + 2, "left")
+        right = nested_extension(mk.MAX_STRUCTURE_DEPTH + 2, "right")
+        with self.assertRaisesRegex(mk.MergeValidationError, "nesting exceeds the safe depth"):
+            mk._merge_value(left, right, "$")
+
+    def test_depth_probe_terminates_on_a_self_referential_structure(self) -> None:
+        cycle: dict = {}
+        cycle["self"] = cycle
+        self.assertTrue(mk._exceeds_structure_depth(cycle))
+        self.assertFalse(mk._exceeds_structure_depth(fixture()))
+
     def test_invalid_input_is_rejected_before_merge(self) -> None:
         incoming = fixture()
         incoming["nodes"][0]["sources"] = ["missing"]
@@ -418,6 +670,24 @@ class MergeCliCase(unittest.TestCase):
             mk.main([str(self.base_path), str(self.incoming_path), "-o", str(output)]),
             1,
         )
+        self.assertFalse((self.root / "versions").exists())
+
+    def test_cli_reports_deep_nesting_instead_of_a_recursion_traceback(self) -> None:
+        output = self.root / "merged.knowledge.json"
+        nested = "null"
+        for _ in range(mk.MAX_STRUCTURE_DEPTH + 10):
+            nested = '{"extension":%s}' % nested
+        payload = json.dumps(incoming_with_delta(), ensure_ascii=False)
+        self.incoming_path.write_text('{"extension":%s,' % nested + payload[1:], encoding="utf-8")
+
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            code = mk.main([str(self.base_path), str(self.incoming_path), "-o", str(output)])
+
+        self.assertEqual(code, 1)
+        self.assertIn("nesting is too deep", stderr.getvalue())
+        self.assertNotIn("Traceback", stderr.getvalue())
+        self.assertFalse(output.exists())
         self.assertFalse((self.root / "versions").exists())
 
     def test_symlink_output_is_rejected_without_touching_target(self) -> None:
