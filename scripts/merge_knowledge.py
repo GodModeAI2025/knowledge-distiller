@@ -9,6 +9,7 @@ Markdown deltas. See ``docs/MERGE.md``.
 from __future__ import annotations
 
 import argparse
+import bisect
 import copy
 import hashlib
 import json
@@ -443,12 +444,70 @@ def _merge_facts(
     by_id = {item["id"]: index for index, item in enumerate(result)}
     aliases: dict[str, str] = {}
     generated: list[dict] = []
+    generated_pairs: set[frozenset] = set()
+
+    # Positions in ``result`` grouped by logical fact key, so that finding the
+    # facts a newcomer contradicts is a lookup instead of a scan over everything
+    # merged so far, and ``_logical_fact_key`` is computed once per record rather
+    # than twice per pair. Buckets stay sorted, so the facts are still visited in
+    # ``result`` order and the conflict records keep their observable sequence.
+    hashed: dict[tuple, list[int]] = {}
+    unhashable: list[tuple[tuple, list[int]]] = []
+    keys: list[tuple | None] = []
+
+    def bucket(key: tuple) -> list[int]:
+        """The position list for ``key``, created on first use.
+
+        The validator requires ``concept`` and ``metric`` to be strings, so an
+        unhashable key is only reachable through the Python API. It gets the old
+        linear answer from a side list; such a key can never equal a hashable one.
+        """
+        try:
+            hash(key)
+        except TypeError:
+            for existing, positions in unhashable:
+                if existing == key:
+                    return positions
+            positions = []
+            unhashable.append((key, positions))
+            return positions
+        return hashed.setdefault(key, [])
+
+    def index_fact(position: int) -> None:
+        key = _logical_fact_key(result[position])
+        keys.append(key)
+        if key is not None:
+            bisect.insort(bucket(key), position)
+
+    def reindex_fact(position: int) -> None:
+        key = _logical_fact_key(result[position])
+        if key == keys[position]:
+            return
+        if keys[position] is not None:
+            bucket(keys[position]).remove(position)
+        keys[position] = key
+        if key is not None:
+            bisect.insort(bucket(key), position)
+
+    def contradicted_by(fact: dict) -> list[dict]:
+        key = _logical_fact_key(fact)
+        if key is None:
+            return []
+        value = fact.get("value")
+        return [
+            result[position]
+            for position in bucket(key)
+            if result[position].get("value") != value
+        ]
+
+    for position in range(len(result)):
+        index_fact(position)
 
     def note_conflict(left: dict, right: dict) -> None:
         pair = frozenset((left["id"], right["id"]))
-        if not any(frozenset(item["facts"]) == pair for item in generated):
-            conflict = _generated_conflict(left, right)
-            generated.append(conflict)
+        if pair not in generated_pairs:
+            generated_pairs.add(pair)
+            generated.append(_generated_conflict(left, right))
 
     for original in incoming:
         fact = copy.deepcopy(original)
@@ -470,15 +529,11 @@ def _merge_facts(
                         )
                     retained = result[by_id[retained_id]]
                 else:
-                    for prior in result:
-                        if (
-                            _logical_fact_key(prior) is not None
-                            and _logical_fact_key(prior) == _logical_fact_key(fact)
-                            and prior.get("value") != fact.get("value")
-                        ):
-                            note_conflict(prior, fact)
+                    for prior in contradicted_by(fact):
+                        note_conflict(prior, fact)
                     by_id[retained_id] = len(result)
                     result.append(fact)
+                    index_fact(len(result) - 1)
                     retained = fact
                     _track(tracker, "added", "facts", retained_id)
                 note_conflict(result[index], retained)
@@ -486,19 +541,16 @@ def _merge_facts(
             aliases[fid] = fid
             if _canon(merged) != _canon(result[index]):
                 result[index] = merged
+                reindex_fact(index)
                 _track(tracker, "enriched", "facts", fid)
             continue
 
         aliases[fid] = fid
-        for prior in result:
-            if (
-                _logical_fact_key(prior) is not None
-                and _logical_fact_key(prior) == _logical_fact_key(fact)
-                and prior.get("value") != fact.get("value")
-            ):
-                note_conflict(prior, fact)
+        for prior in contradicted_by(fact):
+            note_conflict(prior, fact)
         by_id[fid] = len(result)
         result.append(fact)
+        index_fact(len(result) - 1)
         _track(tracker, "added", "facts", fid)
     return result, aliases, generated
 

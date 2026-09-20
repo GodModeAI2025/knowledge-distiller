@@ -107,6 +107,13 @@ time series and are not labelled a conflict.
 The generated reason deliberately says that review is required. It is operational merge
 evidence, not a claim that either value is true.
 
+Those automatic connections are found through an index keyed by `concept`, `metric` and the
+canonical temporal payload, so the cost of merging *N* facts follows *N* rather than *N*
+squared. The index preserves the order in which the facts occur, so the sequence of generated
+`fact_conflicts` records is the same as it has always been. Where one identity genuinely
+carries many different values, the number of conflict records is itself quadratic; that is the
+output, not the search.
+
 ## Required JSON and Markdown deltas
 
 The automatic JSON delta (or the path selected with `--diff-report`) contains:
