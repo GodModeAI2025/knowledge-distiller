@@ -34,6 +34,9 @@ KNOWN_TOP_LEVEL = {
     "open_questions", "evidence", "claims", "assessments", "fact_conflicts",
 }
 MARKER = re.compile(r"\[(\d+)\]")
+# Same bound as the validator: a marker with more digits than this indexes
+# nothing, and converting it would raise instead of being reported.
+MAX_CITATION_DIGITS = 9
 ARCHIVE_NAME = re.compile(r"\.v(\d{4,})\.[0-9a-f]{12}\.json$")
 MAX_INPUT_BYTES = 64 * 1024 * 1024
 _MISSING = object()
@@ -218,7 +221,12 @@ def _remap_citations(doc: dict, merged_sources: list) -> None:
             return text
 
         def replacement(match: re.Match) -> str:
-            old = int(match.group(1))
+            digits = match.group(1)
+            if len(digits) > MAX_CITATION_DIGITS:
+                raise MergeValidationError(
+                    f"incoming citation marker has more than {MAX_CITATION_DIGITS} digits"
+                )
+            old = int(digits)
             if old < 1 or old > len(incoming_order):
                 raise MergeValidationError(f"incoming citation marker [{old}] is out of range")
             return f"[{output_positions[incoming_order[old - 1]]}]"

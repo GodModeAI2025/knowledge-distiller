@@ -59,6 +59,16 @@ FORMAT_BY_SUFFIX = {
 URI_PREFIX = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*:")
 WINDOWS_DRIVE = re.compile(r"^[A-Za-z]:[\\/]")
 XML_DECLARATION_ATTACK = re.compile(br"<!\s*(?:DOCTYPE|ENTITY)\b", re.IGNORECASE)
+# The DTD screen above reads bytes, so it only sees a declaration that is
+# written in ASCII-compatible bytes. A UTF-16 part carries the same declaration
+# as "<\x00!\x00..." and would pass unseen, while the parser still reads it.
+# OOXML parts are UTF-8 in practice, so a part that is not is refused rather
+# than decoded into a second code path.
+XML_UTF8_BOM = b"\xef\xbb\xbf"
+XML_DECLARED_ENCODING = re.compile(
+    br"""^<\?xml[^>]*?encoding\s*=\s*['"]([A-Za-z0-9._-]+)['"]""", re.IGNORECASE
+)
+UTF8_NAMES = {b"utf-8", b"utf8"}
 
 WORD_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 WORD_PARAGRAPH = "{%s}p" % WORD_NS
@@ -729,6 +739,26 @@ def _read_zip_member(archive: zipfile.ZipFile, name: str, max_bytes: int) -> byt
     return data
 
 
+def _require_utf8_xml(name: str, data: bytes) -> None:
+    """Refuse an OOXML part that the byte-level DTD screen could not read.
+
+    The screen matches ASCII-compatible bytes.  A part encoded as UTF-16 or
+    UTF-32 carries every declaration with interleaved null bytes, so the screen
+    finds nothing while the parser reads the declaration all the same.
+    """
+    body = data[len(XML_UTF8_BOM):] if data.startswith(XML_UTF8_BOM) else data
+    if body[:1] not in (b"<", b""):
+        raise MalformedSourceError(
+            f"DOCX member {name!r} is not UTF-8 encoded XML"
+        )
+    declared = XML_DECLARED_ENCODING.match(body)
+    if declared and declared.group(1).lower() not in UTF8_NAMES:
+        raise MalformedSourceError(
+            f"DOCX member {name!r} declares encoding "
+            f"{declared.group(1).decode('ascii', 'replace')!r}; only UTF-8 is supported"
+        )
+
+
 def _docx_paragraph_text(paragraph: ET.Element) -> str:
     parts: list[str] = []
     for item in paragraph.iter():
@@ -779,6 +809,7 @@ def _docx_drafts(
         drafts: list[dict[str, Any]] = []
         for part_name in parts:
             xml = _read_zip_member(archive, part_name, max_bytes)
+            _require_utf8_xml(part_name, xml)
             if XML_DECLARATION_ATTACK.search(xml):
                 raise MalformedSourceError(
                     f"DOCX member {part_name!r} contains a forbidden DTD/entity declaration"

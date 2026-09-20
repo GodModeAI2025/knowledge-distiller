@@ -307,6 +307,23 @@ class SourceAdapterCase(unittest.TestCase):
         with self.assertRaisesRegex(es.MalformedSourceError, "DTD/entity"):
             es.extract_source("entity.docx", input_root=self.input_root)
 
+        # The DTD screen reads bytes, so a UTF-16 part would carry the same
+        # declaration past it while the parser still expanded the entity.
+        utf16_xml = (
+            '<?xml version="1.0" encoding="UTF-16"?>'
+            '<!DOCTYPE x [<!ENTITY e "boom">]>'
+        ).encode("utf-16")
+        self.make_docx("utf16.docx", document=utf16_xml)
+        with self.assertRaisesRegex(es.MalformedSourceError, "not UTF-8"):
+            es.extract_source("utf16.docx", input_root=self.input_root)
+
+        declared_xml = word_document(["x"]).replace(
+            b'encoding="UTF-8"', b'encoding="UTF-16"'
+        )
+        self.make_docx("declared.docx", document=declared_xml)
+        with self.assertRaisesRegex(es.MalformedSourceError, "only UTF-8"):
+            es.extract_source("declared.docx", input_root=self.input_root)
+
         self.make_docx("bomb.docx", document=word_document(["A" * 20_000]))
         bomb_size = (self.input_root / "bomb.docx").stat().st_size
         self.assertLess(bomb_size, 4_000)

@@ -159,7 +159,10 @@ DOCX is read directly from the OOXML ZIP with `zipfile` and `xml.etree.ElementTr
 extracted to the filesystem. The adapter validates archive names, duplicate/encrypted entries,
 entry count, total declared expanded size and required package members. CRC/readability, XML syntax
 and forbidden DTD/entity declarations are checked for every XML part that the adapter actually
-reads; ignored binary/media parts are neither interpreted nor claimed as content validation.
+reads; ignored binary/media parts are neither interpreted nor claimed as content validation. The
+DTD check reads bytes, so a part that is not UTF-8 — a UTF-16 or UTF-32 byte order mark, or a
+declared encoding other than UTF-8 — is rejected before it is parsed rather than decoded into a
+second code path where the same check would have to be repeated.
 Packages containing `vbaProject.bin` or a macro-enabled content type are rejected. Word field
 instructions (`w:instrText`), tracked-deletion text, relationships,
 OLE embeddings, images, drawings, comments, and custom XML are ignored; visible `w:t` text, tabs,
