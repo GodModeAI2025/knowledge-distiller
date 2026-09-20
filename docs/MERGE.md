@@ -158,3 +158,6 @@ deterministic.
 - Only formal schema references are rewritten after node/fact aliasing. Free text and opaque
   extension strings are preserved verbatim because guessing their meaning would be unsafe.
 - Inputs are limited to 64 MiB each to bound local resource use.
+- Inputs may not nest more than 256 containers deep. Every step of the merge walks the graph
+  recursively, so a deeper document is refused with a message before the first copy is taken
+  rather than aborting part-way through with an interpreter recursion error.

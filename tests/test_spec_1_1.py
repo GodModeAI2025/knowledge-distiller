@@ -314,6 +314,50 @@ class CoreRobustnessTests(unittest.TestCase):
             self.assertIn("recursion limit exceeded", "\n".join(schema_report.warnings))
         self.assertIsInstance(vk.validate(doc, check_stored_scores=False), vk.Report)
 
+    def test_nesting_past_the_depth_limit_is_an_error_not_a_traceback(self):
+        doc = load()
+        nested: dict = {}
+        cursor = nested
+        for _ in range(vk.MAX_STRUCTURE_DEPTH + 10):
+            cursor["extension"] = {}
+            cursor = cursor["extension"]
+        doc["extension"] = nested
+        doc["nodes"][0]["reasoning"] = "private"
+
+        report = vk.validate(doc, check_stored_scores=False)
+
+        self.assertTrue(
+            any("nesting exceeds the safe depth limit" in item for item in report.errors),
+            "the bound itself must be reported",
+        )
+        self.assertTrue(
+            any("private reasoning/scratchpad fields are forbidden" in item for item in report.errors),
+            "stopping the descent must not stop the audit of everything beside it",
+        )
+        self.assertEqual(
+            len([item for item in report.errors if "nesting exceeds" in item]), 1,
+            "the bound is reported once, not once per branch",
+        )
+
+    def test_nesting_at_the_depth_limit_is_still_audited(self):
+        doc = load()
+        nested: dict = {}
+        cursor = nested
+        # The document root and its ``extension`` value already account for two
+        # levels, so this is the deepest private field the audit can still reach.
+        for _ in range(vk.MAX_STRUCTURE_DEPTH - 2):
+            cursor["extension"] = {}
+            cursor = cursor["extension"]
+        cursor["chain_of_thought"] = "private"
+        doc["extension"] = nested
+
+        report = vk.validate(doc, check_stored_scores=False)
+
+        self.assertFalse([item for item in report.errors if "nesting exceeds" in item])
+        self.assertTrue(
+            any("private reasoning/scratchpad fields are forbidden" in item for item in report.errors)
+        )
+
     def test_producer_must_violations_are_errors_not_warnings(self):
         cluster_doc = load()
         cluster_doc["clusters"][0]["concepts"].remove("alpha")

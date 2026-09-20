@@ -299,6 +299,44 @@ class ProfilePolicyCase(unittest.TestCase):
                 self.assertTrue(any("forbidden in profiles" in item for item in report.errors))
                 self.assertTrue(any("unknown key" in item for item in report.warnings))
 
+    def test_nesting_past_the_depth_limit_is_an_error_not_a_traceback(self):
+        profile = default_profile()
+        nested = {}
+        cursor = nested
+        for _ in range(vp.MAX_STRUCTURE_DEPTH + 10):
+            cursor["extension"] = {}
+            cursor = cursor["extension"]
+        profile["compiler"]["extension"] = nested
+        profile["compiler"]["api_key"] = "must-never-be-stored"
+
+        report = manual_report(profile)
+
+        self.assertFalse(report.ok)
+        self.assertTrue(
+            any("nesting exceeds the safe depth limit" in item for item in report.errors)
+        )
+        self.assertTrue(
+            any("forbidden in profiles" in item for item in report.errors),
+            "stopping the descent must not stop the scan of everything beside it",
+        )
+
+    def test_a_secret_at_the_depth_limit_is_still_found(self):
+        profile = default_profile()
+        nested = {}
+        cursor = nested
+        # ``$``, ``compiler`` and ``extension`` already account for three levels,
+        # so this is the deepest secret the scan can still reach.
+        for _ in range(vp.MAX_STRUCTURE_DEPTH - 3):
+            cursor["extension"] = {}
+            cursor = cursor["extension"]
+        cursor["api_key"] = "must-never-be-stored"
+        profile["compiler"]["extension"] = nested
+
+        report = manual_report(profile)
+
+        self.assertFalse([item for item in report.errors if "nesting exceeds" in item])
+        self.assertTrue(any("forbidden in profiles" in item for item in report.errors))
+
 
 class ProfileLoadingAndCliCase(unittest.TestCase):
     def setUp(self):

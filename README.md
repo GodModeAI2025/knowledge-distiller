@@ -73,7 +73,10 @@ Spec 1.1 adds optional:
 
 Each specialized contract is documented under `docs/`. Every script that reads a graph JSON file
 reads it under the same 64 MiB house bound the runner and the merge already state, so an oversized
-input is rejected with a message instead of consuming memory.
+input is rejected with a message instead of consuming memory. The same loader also refuses a
+document nested more than 256 containers deep — every validator, audit and merge step walks the
+graph recursively, so the bound is stated once rather than left to whichever consumer runs out of
+stack first.
 
 ## Quick start
 

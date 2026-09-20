@@ -1,7 +1,9 @@
 """Focused contract, conflict and file-safety tests for deterministic graph merging."""
 from __future__ import annotations
 
+import contextlib
 import copy
+import io
 import json
 import sys
 import tempfile
@@ -100,6 +102,16 @@ def fact_population(count: int, prefix: str, *, shared_key: bool = True) -> list
         }
         for index in range(count)
     ]
+
+
+def nested_extension(depth: int, leaf: str = "leaf") -> dict:
+    root: dict = {}
+    cursor = root
+    for _ in range(depth - 1):
+        cursor["extension"] = {}
+        cursor = cursor["extension"]
+    cursor["extension"] = leaf
+    return root
 
 
 class MergeContractCase(unittest.TestCase):
@@ -421,6 +433,39 @@ class MergeContractCase(unittest.TestCase):
             [["f1", "f2"], ["f1", "f3"], ["f2", "f3"]],
         )
 
+    def test_graph_nested_past_the_depth_limit_is_refused_with_a_message(self) -> None:
+        incoming = fixture()
+        incoming["extension"] = nested_extension(mk.MAX_STRUCTURE_DEPTH + 1)
+        with self.assertRaisesRegex(mk.MergeValidationError, "nesting exceeds the safe depth"):
+            mk.merge_documents(fixture(), incoming)
+        with self.assertRaisesRegex(mk.MergeValidationError, "base graph"):
+            mk.merge_documents(incoming, fixture())
+
+    def test_a_graph_at_the_depth_limit_is_not_refused(self) -> None:
+        """The bound must not be so tight that a document sitting on it is rejected."""
+        doc = fixture()
+        doc["extension"] = nested_extension(mk.MAX_STRUCTURE_DEPTH - 1)
+        self.assertFalse(mk._exceeds_structure_depth(doc))
+        self.assertEqual(
+            mk._merge_value(doc["extension"], copy.deepcopy(doc["extension"]), "$"),
+            doc["extension"],
+            "the recursive merge must still complete at the limit",
+        )
+        doc["extension"] = nested_extension(mk.MAX_STRUCTURE_DEPTH)
+        self.assertTrue(mk._exceeds_structure_depth(doc))
+
+    def test_merge_value_refuses_to_recurse_past_the_depth_limit(self) -> None:
+        left = nested_extension(mk.MAX_STRUCTURE_DEPTH + 2, "left")
+        right = nested_extension(mk.MAX_STRUCTURE_DEPTH + 2, "right")
+        with self.assertRaisesRegex(mk.MergeValidationError, "nesting exceeds the safe depth"):
+            mk._merge_value(left, right, "$")
+
+    def test_depth_probe_terminates_on_a_self_referential_structure(self) -> None:
+        cycle: dict = {}
+        cycle["self"] = cycle
+        self.assertTrue(mk._exceeds_structure_depth(cycle))
+        self.assertFalse(mk._exceeds_structure_depth(fixture()))
+
     def test_invalid_input_is_rejected_before_merge(self) -> None:
         incoming = fixture()
         incoming["nodes"][0]["sources"] = ["missing"]
@@ -546,6 +591,24 @@ class MergeCliCase(unittest.TestCase):
             mk.main([str(self.base_path), str(self.incoming_path), "-o", str(output)]),
             1,
         )
+        self.assertFalse((self.root / "versions").exists())
+
+    def test_cli_reports_deep_nesting_instead_of_a_recursion_traceback(self) -> None:
+        output = self.root / "merged.knowledge.json"
+        nested = "null"
+        for _ in range(mk.MAX_STRUCTURE_DEPTH + 10):
+            nested = '{"extension":%s}' % nested
+        payload = json.dumps(incoming_with_delta(), ensure_ascii=False)
+        self.incoming_path.write_text('{"extension":%s,' % nested + payload[1:], encoding="utf-8")
+
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            code = mk.main([str(self.base_path), str(self.incoming_path), "-o", str(output)])
+
+        self.assertEqual(code, 1)
+        self.assertIn("nesting is too deep", stderr.getvalue())
+        self.assertNotIn("Traceback", stderr.getvalue())
+        self.assertFalse(output.exists())
         self.assertFalse((self.root / "versions").exists())
 
     def test_symlink_output_is_rejected_without_touching_target(self) -> None:

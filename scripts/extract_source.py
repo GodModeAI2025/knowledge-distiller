@@ -36,6 +36,8 @@ DEFAULT_MAX_SEGMENT_CHARS = 16_000
 DEFAULT_MAX_SEGMENTS = 10_000
 DEFAULT_MAX_OUTPUT_BYTES = 256 * 1024 * 1024
 MAX_ARCHIVE_ENTRIES = 10_000
+# HTML element nesting only; a JSON source document uses the shared
+# ``strict_json.MAX_STRUCTURE_DEPTH`` that every graph loader applies.
 MAX_STRUCTURE_DEPTH = 512
 MAX_LOGICAL_NAME_CHARS = 4_096
 QUOTE_CONTEXT_CHARS = 32
@@ -679,8 +681,11 @@ def _json_drafts(
         )
 
     def walk(item: Any, pointer: str, depth: int) -> None:
-        if depth > 256:
-            raise MalformedSourceError("JSON nesting exceeds the safe depth limit of 256")
+        if depth > strict_json.MAX_STRUCTURE_DEPTH:
+            raise MalformedSourceError(
+                "JSON nesting exceeds the safe depth limit of "
+                f"{strict_json.MAX_STRUCTURE_DEPTH}"
+            )
         if isinstance(item, dict):
             if not item:
                 add(pointer, item)

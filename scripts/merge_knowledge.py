@@ -40,6 +40,11 @@ MARKER = re.compile(r"\[(\d+)\]")
 MAX_CITATION_DIGITS = 9
 ARCHIVE_NAME = re.compile(r"\.v(\d{4,})\.[0-9a-f]{12}\.json$")
 MAX_INPUT_BYTES = 64 * 1024 * 1024
+# Shared with the loader. Every step of the merge walks the graph recursively --
+# ``copy.deepcopy``, ``_merge_value``, ``json.dumps`` in ``_canon`` -- so a graph
+# that nests deeper than this is refused up front instead of aborting somewhere
+# in the middle with an interpreter-level RecursionError.
+MAX_STRUCTURE_DEPTH = strict_json.MAX_STRUCTURE_DEPTH
 _MISSING = object()
 
 
@@ -82,8 +87,42 @@ def _stable_union(left: list, right: list) -> list:
     return result
 
 
-def _merge_value(left: object, right: object, where: str) -> object:
+def _exceeds_structure_depth(value: object, limit: int = MAX_STRUCTURE_DEPTH) -> bool:
+    """Report whether ``value`` nests deeper than ``limit`` containers.
+
+    Deliberately iterative: a recursive probe would be the very failure it exists
+    to prevent. A self-referential structure -- impossible from JSON, reachable
+    through the Python API -- terminates here as "too deep" rather than looping.
+    """
+    stack: list[tuple[object, int]] = [(value, 0)]
+    while stack:
+        item, depth = stack.pop()
+        if not isinstance(item, (dict, list)):
+            continue
+        if depth >= limit:
+            return True
+        children = item.values() if isinstance(item, dict) else item
+        for child in children:
+            if isinstance(child, (dict, list)):
+                stack.append((child, depth + 1))
+    return False
+
+
+def _require_bounded_depth(doc: object, label: str) -> None:
+    if _exceeds_structure_depth(doc):
+        raise MergeValidationError(
+            f"{label}: structure nesting exceeds the safe depth limit of "
+            f"{MAX_STRUCTURE_DEPTH}"
+        )
+
+
+def _merge_value(left: object, right: object, where: str, depth: int = 0) -> object:
     """Additively combine compatible values or fail instead of choosing one silently."""
+    if depth >= MAX_STRUCTURE_DEPTH:
+        raise MergeValidationError(
+            f"{where}: structure nesting exceeds the safe depth limit of "
+            f"{MAX_STRUCTURE_DEPTH}"
+        )
     if _canon(left) == _canon(right):
         return copy.deepcopy(left)
     if left is None or left == "":
@@ -98,7 +137,7 @@ def _merge_value(left: object, right: object, where: str) -> object:
             if key not in result:
                 result[key] = copy.deepcopy(value)
             else:
-                result[key] = _merge_value(result[key], value, f"{where}.{key}")
+                result[key] = _merge_value(result[key], value, f"{where}.{key}", depth + 1)
         return result
     raise PayloadConflictError(
         f"{where}: conflicting payloads {left!r} and {right!r}; merge refused"
@@ -665,6 +704,8 @@ def merge_documents(
     """Return ``(merged_graph, machine_diff)`` without mutating either input."""
     if fact_conflicts not in {"error", "record"}:
         raise ValueError("fact_conflicts must be 'error' or 'record'")
+    _require_bounded_depth(base, "base graph")
+    _require_bounded_depth(incoming, "incoming graph")
     base_doc = copy.deepcopy(base)
     incoming_doc = copy.deepcopy(incoming)
     base_input_hash = _sha_document(base_doc)

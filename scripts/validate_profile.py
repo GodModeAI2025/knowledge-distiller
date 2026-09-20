@@ -23,6 +23,10 @@ REPO_ROOT = SCRIPT_DIR.parent
 SCHEMA_PATH = REPO_ROOT / "schema" / "profile.schema.json"
 DEFAULT_PROFILE_PATH = REPO_ROOT / "profiles" / "default.json"
 MAX_PROFILE_BYTES = 1024 * 1024
+# Shared with the loader: the sensitive-key scan below is recursive, so a
+# profile it is asked to walk must be shallow enough for the walk to finish.
+MAX_STRUCTURE_DEPTH = strict_json.MAX_STRUCTURE_DEPTH
+DEPTH_LIMIT_ERROR = "structure nesting exceeds the safe depth limit"
 SUPPORTED_PROFILE_VERSIONS = {"1.0"}
 
 PROFILE_ID = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
@@ -301,7 +305,16 @@ def _normalized_key(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "_", snake_case.lower()).strip("_")
 
 
-def _scan_sensitive_keys(value: Any, path: str, report: Report) -> None:
+def _scan_sensitive_keys(value: Any, path: str, report: Report, depth: int = 0) -> None:
+    if isinstance(value, (dict, list)) and depth >= MAX_STRUCTURE_DEPTH:
+        # Report the bound once and stop descending; the rest of the profile is
+        # still scanned, so the walk never runs the interpreter out of stack.
+        if not any(DEPTH_LIMIT_ERROR in item for item in report.errors):
+            report.error(
+                f"{path or '$'}: {DEPTH_LIMIT_ERROR} of {MAX_STRUCTURE_DEPTH}; "
+                "nothing below it was scanned for secrets"
+            )
+        return
     if isinstance(value, dict):
         for key, child in value.items():
             key_text = str(key)
@@ -325,10 +338,10 @@ def _scan_sensitive_keys(value: Any, path: str, report: Report) -> None:
                 report.error(
                     f"{child_path}: prompts, private reasoning, secrets, credentials, and access tokens are forbidden in profiles"
                 )
-            _scan_sensitive_keys(child, child_path, report)
+            _scan_sensitive_keys(child, child_path, report, depth + 1)
     elif isinstance(value, list):
         for index, child in enumerate(value):
-            _scan_sensitive_keys(child, f"{path}[{index}]", report)
+            _scan_sensitive_keys(child, f"{path}[{index}]", report, depth + 1)
 
 
 def validate(profile: Any, *, apply_schema: bool = True) -> Report:

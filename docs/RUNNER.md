@@ -188,7 +188,7 @@ The default limits are:
 
 - request body: 64 KiB;
 - response body: 1 MiB;
-- graph input: 64 MiB;
+- graph input: 64 MiB, nested at most 256 containers deep;
 - one run attempt: 512 MiB;
 - complete output root: 4 GiB;
 - concurrent HTTP requests: 16; and

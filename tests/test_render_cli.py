@@ -66,6 +66,23 @@ class StrictJsonTests(unittest.TestCase):
         with self.assertRaisesRegex(strict_json.StrictJsonError, "nesting is too deep"):
             strict_json.loads(payload, source="deep.json")
 
+    def test_nesting_is_bounded_by_a_stated_limit_not_by_the_recursion_limit(self) -> None:
+        limit = strict_json.MAX_STRUCTURE_DEPTH
+        at_limit = "[" * limit + "0" + "]" * limit
+        self.assertIsInstance(strict_json.loads(at_limit, source="deep.json"), list)
+        over_limit = "[" * (limit + 1) + "0" + "]" * (limit + 1)
+        with self.assertRaisesRegex(
+            strict_json.StrictJsonError, rf"nesting is too deep; the safe depth limit is {limit}"
+        ):
+            strict_json.loads(over_limit, source="deep.json")
+
+    def test_the_depth_message_does_not_carry_a_kilobyte_of_location(self) -> None:
+        over_limit = "[" * (strict_json.MAX_STRUCTURE_DEPTH + 1) + "0"
+        over_limit += "]" * (strict_json.MAX_STRUCTURE_DEPTH + 1)
+        with self.assertRaises(strict_json.StrictJsonError) as caught:
+            strict_json.loads(over_limit, source="deep.json")
+        self.assertLess(len(str(caught.exception)), 200)
+
     def test_a_file_is_never_read_without_a_bound(self) -> None:
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "big.json"
