@@ -71,7 +71,9 @@ Spec 1.1 adds optional:
 | `run_pipeline.py` | Run content-addressed validate/build stages with immutable receipts and resumable attempts. |
 | `serve_api.py` | Optional authenticated loopback-only HTTP and minimal MCP facade for validate/build. |
 
-Each specialized contract is documented under `docs/`.
+Each specialized contract is documented under `docs/`. Every script that reads a graph JSON file
+reads it under the same 64 MiB house bound the runner and the merge already state, so an oversized
+input is rejected with a message instead of consuming memory.
 
 ## Quick start
 

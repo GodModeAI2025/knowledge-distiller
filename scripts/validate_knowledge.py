@@ -82,6 +82,10 @@ KNOWN_DERIVATION_KEYS = {"kind", "activity", "inputs", "rule", "summary", "revie
 SCHEMA_PATH = Path(__file__).resolve().parent.parent / "schema" / "knowledge.schema.json"
 
 CITATION_MARKER = re.compile(r"\[(\d+)\]")
+# A citation number indexes metadata.sources, so a longer digit run is not a
+# number that is merely out of range: converting it would raise before it
+# could be judged. It is reported and never converted.
+MAX_CITATION_DIGITS = 9
 WIKILINK = re.compile(r"\[\[([^\]]+)\]\]")
 SHA256 = re.compile(r"^(?:sha256:)?[A-Fa-f0-9]{64}$")
 ISO_DATE = re.compile(
@@ -278,6 +282,21 @@ def _check_datetime(value: object, where: str, rep: Report) -> None:
         return
     if parsed.tzinfo is None:
         rep.err(f"{where}: date-time must include a timezone")
+
+
+def _listed_in_cluster(node_id: object, concepts: "set[str] | None") -> bool:
+    """Membership in a cluster's concept set, for an id of any shape.
+
+    The set keeps this check linear over the whole graph. An id that is not
+    even hashable — hostile input reaches this far — is simply not listed,
+    which is the answer a list comparison gave before.
+    """
+    if not concepts:
+        return False
+    try:
+        return node_id in concepts
+    except TypeError:
+        return False
 
 
 def _check_string_list(value: object, where: str, rep: Report, *, nonempty_items: bool = False) -> list:
@@ -686,7 +705,8 @@ def validate(
 
     clusters = _as_list(doc.get("clusters"), "clusters", rep)
     cluster_ids: set[str] = set()
-    cluster_concepts: dict[str, list] = {}
+    # Membership only, once per node: a set keeps that linear in the node count.
+    cluster_concepts: dict[str, set[str]] = {}
     for index, cluster in enumerate(clusters):
         where = f"clusters[{index}]"
         if not _require(cluster, ["id", "label", "concepts"], where, rep):
@@ -698,7 +718,7 @@ def validate(
             _check_string(cluster.get("description"), f"{where}.description", rep)
         concepts = _check_string_list(cluster.get("concepts"), f"{where}.concepts", rep)
         if cid:
-            cluster_concepts[cid] = concepts
+            cluster_concepts[cid] = set(concepts)
         if not concepts:
             rep.warn(f"clusters[{cid or index}]: has no concepts")
 
@@ -736,7 +756,7 @@ def validate(
         cluster = node.get("cluster")
         if isinstance(cluster, str) and cluster not in cluster_ids:
             rep.err(f"{where}.cluster: {cluster!r} does not resolve to a declared cluster")
-        elif isinstance(cluster, str) and nid not in cluster_concepts.get(cluster, []):
+        elif isinstance(cluster, str) and not _listed_in_cluster(nid, cluster_concepts.get(cluster)):
             rep.err(f"{where}: not listed in cluster {cluster!r}.concepts (run build_graph to fix)")
         statements = _check_string_list(node.get("statements"), f"{where}.statements", rep)
         if not statements:
@@ -777,7 +797,15 @@ def validate(
             _check_url(citation.get("url"), f"{cw}.url", rep)
             if citation.get("selector") is not None:
                 _check_selector(citation.get("selector"), f"{cw}.selector", rep)
-        marker_numbers = {int(match) for statement in statements if isinstance(statement, str) for match in CITATION_MARKER.findall(statement)}
+        marker_numbers: set[int] = set()
+        for statement in statements:
+            if not isinstance(statement, str):
+                continue
+            for match in CITATION_MARKER.findall(statement):
+                if len(match) > MAX_CITATION_DIGITS:
+                    rep.err(f"{where}: citation marker has more than {MAX_CITATION_DIGITS} digits")
+                    continue
+                marker_numbers.add(int(match))
         for number in marker_numbers:
             if number < 1 or number > len(ordered_sources):
                 rep.err(f"{where}: citation marker [{number}] out of range (1..{len(ordered_sources)} sources)")

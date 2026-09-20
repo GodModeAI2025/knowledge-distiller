@@ -99,6 +99,17 @@ class TestStructuralErrors(unittest.TestCase):
         rep = run(d)
         self.assertTrue(any("citation marker [7] out of range" in e for e in rep.errors), err_text(rep))
 
+    def test_absurdly_long_citation_marker_is_reported_not_raised(self):
+        # A digit run this long is not a number that is merely out of range:
+        # converting it raises before the validator can judge it.
+        d = copy.deepcopy(self.base)
+        d["nodes"][0]["statements"][0] = "Alpha cites nothing. [" + "1" * 5000 + "]"
+        rep = run(d)
+        self.assertTrue(
+            any("citation marker has more than 9 digits" in e for e in rep.errors),
+            err_text(rep),
+        )
+
     def test_count_mismatch(self):
         d = copy.deepcopy(self.base)
         d["metadata"]["concept_count"] = 99

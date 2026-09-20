@@ -104,6 +104,14 @@ class MergeContractCase(unittest.TestCase):
         self.assertEqual(base, base_before)
         self.assertEqual(incoming, incoming_before)
 
+    def test_absurdly_long_citation_marker_fails_the_merge_instead_of_raising(self) -> None:
+        base = fixture()
+        incoming = incoming_with_delta()
+        delta = next(node for node in incoming["nodes"] if node["id"] == "delta")
+        delta["statements"] = ["Delta extends Gamma. [" + "1" * 5000 + "]"]
+        with self.assertRaisesRegex(mk.MergeValidationError, "more than 9 digits"):
+            mk.merge_documents(base, incoming)
+
     def test_resource_identity_unifies_node_and_remaps_all_known_references(self) -> None:
         base = fixture()
         base["nodes"][0]["resource"] = "urn:example:alpha"

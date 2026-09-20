@@ -66,6 +66,18 @@ class StrictJsonTests(unittest.TestCase):
         with self.assertRaisesRegex(strict_json.StrictJsonError, "nesting is too deep"):
             strict_json.loads(payload, source="deep.json")
 
+    def test_a_file_is_never_read_without_a_bound(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "big.json"
+            path.write_bytes(b'{"value": "' + b"a" * 4096 + b'"}')
+            with self.assertRaisesRegex(strict_json.StrictJsonError, "configured limit"):
+                strict_json.load_path(path, max_bytes=1024)
+            self.assertEqual(
+                strict_json.load_path(path)["value"],
+                "a" * 4096,
+                "the house limit must not reject an ordinary file",
+            )
+
     def test_accepts_valid_surrogate_pair_as_unicode_scalar(self) -> None:
         self.assertEqual(
             strict_json.loads(b'{"value": "\\ud83d\\ude00"}'),

@@ -307,6 +307,46 @@ class SourceAdapterCase(unittest.TestCase):
         with self.assertRaisesRegex(es.MalformedSourceError, "DTD/entity"):
             es.extract_source("entity.docx", input_root=self.input_root)
 
+        # The DTD screen reads bytes, so a UTF-16 part would carry the same
+        # declaration past it while the parser still expanded the entity.
+        utf16_xml = (
+            '<?xml version="1.0" encoding="UTF-16"?>'
+            '<!DOCTYPE x [<!ENTITY e "boom">]>'
+        ).encode("utf-16")
+        self.make_docx("utf16.docx", document=utf16_xml)
+        with self.assertRaisesRegex(es.MalformedSourceError, "not UTF-8"):
+            es.extract_source("utf16.docx", input_root=self.input_root)
+
+        # Without a byte order mark the same part begins with a plain "<", so
+        # the first byte says nothing; the parser detects UTF-16 from the two
+        # bytes that follow, and only the null byte separates the two cases.
+        for label, encoding in (("le", "utf-16-le"), ("be", "utf-16-be")):
+            headless = (
+                '<?xml version="1.0" encoding="UTF-16"?>'
+                '<!DOCTYPE x [<!ENTITY e "boom">]>'
+                '<w:document xmlns:w="http://schemas.openxmlformats.org/'
+                'wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>&e;'
+                "</w:t></w:r></w:p></w:body></w:document>"
+            ).encode(encoding)
+            self.make_docx(f"utf16-{label}.docx", document=headless)
+            with self.assertRaisesRegex(es.MalformedSourceError, "not UTF-8"):
+                es.extract_source(f"utf16-{label}.docx", input_root=self.input_root)
+
+        declared_xml = word_document(["x"]).replace(
+            b'encoding="UTF-8"', b'encoding="UTF-16"'
+        )
+        self.make_docx("declared.docx", document=declared_xml)
+        with self.assertRaisesRegex(es.MalformedSourceError, "only UTF-8"):
+            es.extract_source("declared.docx", input_root=self.input_root)
+
+        # Counter-check, so the encoding screen does not grow into a filter on
+        # ordinary files: a part without a declaration may start with the
+        # whitespace XML allows before the root element.
+        indented = b"\r\n  " + word_document(["Indented part"]).split(b"?>", 1)[1]
+        self.make_docx("indented.docx", document=indented)
+        extracted = es.extract_source("indented.docx", input_root=self.input_root)
+        self.assertEqual(extracted["segments"][0]["text"], "Indented part")
+
         self.make_docx("bomb.docx", document=word_document(["A" * 20_000]))
         bomb_size = (self.input_root / "bomb.docx").stat().st_size
         self.assertLess(bomb_size, 4_000)

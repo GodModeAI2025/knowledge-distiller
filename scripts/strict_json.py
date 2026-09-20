@@ -20,6 +20,11 @@ class StrictJsonError(ValueError):
 
 MAX_NUMBER_CHARS = 4_300
 
+#: The house limit for a self-supplied input file, shared with
+#: ``extract_source`` and the runner.  A caller that already checks the size
+#: itself may raise or disable it, but no caller reads without a bound.
+MAX_FILE_BYTES = 64 * 1024 * 1024
+
 
 def _object_without_duplicates(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     result: dict[str, Any] = {}
@@ -105,11 +110,31 @@ def loads(data: str | bytes | bytearray, *, source: str = "<string>") -> Any:
         raise StrictJsonError(f"{source}: JSON nesting is too deep") from exc
 
 
-def load_path(path: str | Path) -> Any:
-    """Read and strictly parse one UTF-8 JSON file."""
+def load_path(path: str | Path, *, max_bytes: int | None = MAX_FILE_BYTES) -> Any:
+    """Read and strictly parse one UTF-8 JSON file.
+
+    ``max_bytes`` bounds the read.  The size is checked before the file is read
+    and again afterwards, because a file can grow between the two.  ``None``
+    reads without a bound and is for callers that have already checked.
+    """
     source = Path(path)
+    if max_bytes is not None:
+        if not isinstance(max_bytes, int) or isinstance(max_bytes, bool) or max_bytes <= 0:
+            raise ValueError("max_bytes must be a positive integer or None")
+        try:
+            declared = source.stat().st_size
+        except OSError as exc:
+            raise StrictJsonError(f"{source}: could not read JSON: {exc}") from exc
+        if declared > max_bytes:
+            raise StrictJsonError(
+                f"{source}: input is {declared} bytes; configured limit is {max_bytes} bytes"
+            )
     try:
         data = source.read_bytes()
     except OSError as exc:
         raise StrictJsonError(f"{source}: could not read JSON: {exc}") from exc
+    if max_bytes is not None and len(data) > max_bytes:
+        raise StrictJsonError(
+            f"{source}: input grew beyond the configured {max_bytes}-byte limit"
+        )
     return loads(data, source=str(source))
