@@ -65,6 +65,7 @@ XML_DECLARATION_ATTACK = re.compile(br"<!\s*(?:DOCTYPE|ENTITY)\b", re.IGNORECASE
 # OOXML parts are UTF-8 in practice, so a part that is not is refused rather
 # than decoded into a second code path.
 XML_UTF8_BOM = b"\xef\xbb\xbf"
+XML_LEADING_SPACE = b" \t\r\n"
 XML_DECLARED_ENCODING = re.compile(
     br"""^<\?xml[^>]*?encoding\s*=\s*['"]([A-Za-z0-9._-]+)['"]""", re.IGNORECASE
 )
@@ -745,9 +746,17 @@ def _require_utf8_xml(name: str, data: bytes) -> None:
     The screen matches ASCII-compatible bytes.  A part encoded as UTF-16 or
     UTF-32 carries every declaration with interleaved null bytes, so the screen
     finds nothing while the parser reads the declaration all the same.
+
+    The null byte is what decides it: XML forbids U+0000 outright and UTF-8
+    never emits one inside a multi-byte sequence, so a part that carries one is
+    not UTF-8 XML.  That also covers UTF-16 without a byte order mark, which
+    begins with a plain ``<`` and which the parser detects from the two bytes
+    that follow.  Leading whitespace is allowed because XML allows it before the
+    root element of a part that carries no declaration.
     """
     body = data[len(XML_UTF8_BOM):] if data.startswith(XML_UTF8_BOM) else data
-    if body[:1] not in (b"<", b""):
+    body = body.lstrip(XML_LEADING_SPACE)
+    if body[:1] not in (b"<", b"") or b"\x00" in body:
         raise MalformedSourceError(
             f"DOCX member {name!r} is not UTF-8 encoded XML"
         )
