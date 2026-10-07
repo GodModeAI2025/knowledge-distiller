@@ -6,7 +6,10 @@ the quoted passage exists, because the graph does not carry its sources. An exte
 therefore produce a perfectly conformant graph whose ``TextQuoteSelector.exact`` never occurred in
 the document. This tool closes that gap mechanically, using the output of ``extract_source.py``:
 
-* evidence is matched to a normalized source only through an identical ``content_sha256``;
+* evidence is matched to a normalized source through an identical ``content_sha256``, otherwise
+  through an identical ``normalized_sha256`` (same extracted content in different container
+  bytes, for example after an editor re-saved the file), or through an explicit
+  ``--bind SOURCE_ID=PATH`` that the caller vouches for; every result names how it was matched;
 * ``TextQuoteSelector.exact`` and an optional ``excerpt`` must occur in the normalized text
   (compared after Unicode NFC normalization, with whitespace runs as one space);
 * ``TextPositionSelector`` ranges must lie inside one extracted text segment, and a present
@@ -204,24 +207,62 @@ def _check_evidence(evidence: dict[str, Any], index: _Index) -> tuple[str, str]:
     return "unverifiable", f"selector type {stype!r} is not produced by the local adapter"
 
 
-def verify(graph: dict[str, Any], normalized: list[dict[str, Any]]) -> dict[str, Any]:
-    by_digest = {_digest(doc["source"].get("content_sha256")): _Index(doc) for doc in normalized}
-    sources = graph.get("metadata", {}).get("sources", []) if isinstance(graph.get("metadata"), dict) else []
-    source_digest = {
-        s.get("id"): _digest(s.get("content_sha256")) for s in sources if isinstance(s, dict)
+def _source_index(
+    source: dict[str, Any] | None,
+    by_content: dict[str | None, _Index],
+    by_normalized: dict[str | None, _Index],
+) -> tuple[_Index | None, str | None, str]:
+    """Find the normalized source for one graph source; return (index, matched_by, detail)."""
+    if source is None:
+        return None, None, "evidence names a source that the graph does not declare"
+    content = _digest(source.get("content_sha256"))
+    normalized = _digest(source.get("normalized_sha256"))
+    if content is None and normalized is None:
+        return None, None, "graph source carries no content_sha256 or normalized_sha256"
+    if content is not None and content in by_content:
+        return by_content[content], "content_sha256", ""
+    if normalized is not None and normalized in by_normalized:
+        return by_normalized[normalized], "normalized_sha256", ""
+    return None, None, "no normalized source with this content_sha256 or normalized_sha256 was supplied"
+
+
+def verify(
+    graph: dict[str, Any],
+    normalized: list[dict[str, Any]],
+    bindings: dict[str, dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Resolve graph evidence. ``bindings`` maps a graph source ID to a normalized source.
+
+    A binding is the caller's statement that this extraction is the named source, for example
+    the current version of a document whose text has since changed. It takes precedence over
+    hash matching, and every result it produces says ``matched_by: "binding"``.
+    """
+    by_content = {_digest(doc["source"].get("content_sha256")): _Index(doc) for doc in normalized}
+    by_normalized = {
+        _digest(doc["source"].get("normalized_sha256")): _Index(doc)
+        for doc in normalized if _digest(doc["source"].get("normalized_sha256"))
     }
+    bound = {sid: _Index(doc) for sid, doc in (bindings or {}).items()}
+    sources = graph.get("metadata", {}).get("sources", []) if isinstance(graph.get("metadata"), dict) else []
+    by_id = {s.get("id"): s for s in sources if isinstance(s, dict)}
+    unknown = sorted(set(bound) - set(by_id))
+    if unknown:
+        raise VerificationError("--bind names source(s) the graph does not declare: " + ", ".join(map(str, unknown)))
     results = []
     for evidence in graph.get("evidence", []) or []:
         if not isinstance(evidence, dict):
             continue
-        digest = source_digest.get(evidence.get("source"))
-        if digest is None:
-            status, detail = "unverifiable", "graph source carries no content_sha256"
-        elif digest not in by_digest:
-            status, detail = "unverifiable", "no normalized source with this content_sha256 was supplied"
+        source_id = evidence.get("source")
+        if source_id in bound:
+            index, matched_by, detail = bound[source_id], "binding", ""
         else:
-            status, detail = _check_evidence(evidence, by_digest[digest])
-        results.append({"evidence": evidence.get("id"), "status": status, "detail": detail})
+            index, matched_by, detail = _source_index(by_id.get(source_id), by_content, by_normalized)
+        if index is None:
+            status = "unverifiable"
+        else:
+            status, detail = _check_evidence(evidence, index)
+        results.append({"evidence": evidence.get("id"), "status": status, "detail": detail,
+                        "matched_by": matched_by})
     counts = {name: sum(1 for r in results if r["status"] == name)
               for name in ("verified", "not_found", "unverifiable")}
     return {
@@ -237,16 +278,26 @@ def verify(graph: dict[str, Any], normalized: list[dict[str, Any]]) -> dict[str,
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Resolve graph evidence against extract_source.py output")
     parser.add_argument("graph", help="path to the .knowledge.json")
-    parser.add_argument("normalized", nargs="+", help="extract_source.py result(s), JSON or JSONL")
+    parser.add_argument("normalized", nargs="*", help="extract_source.py result(s), JSON or JSONL")
+    parser.add_argument("--bind", action="append", default=[], metavar="SOURCE_ID=PATH",
+                        help="pair a graph source with this extract_source.py result regardless of hashes")
     parser.add_argument("--require-all", action="store_true",
                         help="also fail when any evidence record is unverifiable")
     parser.add_argument("--json", action="store_true", dest="as_json", help="emit a machine-readable report")
     args = parser.parse_args(argv)
+    if not args.normalized and not args.bind:
+        parser.error("supply at least one normalized source or --bind SOURCE_ID=PATH")
     try:
         graph = _load_json(Path(args.graph))
         if not isinstance(graph, dict):
             raise VerificationError(f"{args.graph}: graph must be a JSON object")
-        report = verify(graph, [load_normalized(Path(p)) for p in args.normalized])
+        bindings = {}
+        for item in args.bind:
+            source_id, sep, path = item.partition("=")
+            if not sep or not source_id or not path:
+                raise VerificationError(f"--bind expects SOURCE_ID=PATH, got {item!r}")
+            bindings[source_id] = load_normalized(Path(path))
+        report = verify(graph, [load_normalized(Path(p)) for p in args.normalized], bindings)
     except (OSError, UnicodeError, VerificationError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2

@@ -115,7 +115,8 @@ UTF-8, unsafe archives and symlink escapes fail explicitly.
 
 This stage normalizes source material; it does not invent concepts or feed the runner automatically.
 After compilation, `verify_evidence.py graph.knowledge.json normalized.source.json` checks that
-every evidence anchor exists in the normalized source it names by `content_sha256`: quoted text
+every evidence anchor exists in the normalized source it names by `content_sha256` (or by
+`normalized_sha256` after a byte-only re-save, or through an explicit `--bind`): quoted text
 must occur, positions must fall inside a segment and copied selectors must match. Unmatched records
 are reported as unverifiable, never as verified, and a found passage is not proof of support.
 Semantic compilation must be performed by an external agent/compiler using a validated
@@ -173,6 +174,7 @@ or unsafe provenance is an error.
 
 | Version | Change |
 |---|---|
+| v4.0 / Spec 1.1 (2026-10) | Additive: `sources[].normalized_sha256` and adapter field of the same name (content hash independent of container bytes); `verify_evidence.py` matches by it and accepts explicit `--bind SOURCE_ID=PATH`, reporting `matched_by`. Adapter version 1.1. |
 | v4.0 / Spec 1.1 (2026-09) | Evidence selectors, stable claims, objective source provenance, origin/derivation/review, spatial roles, assessments/conflicts, hardened viewer/bundle, exact-archive merge with JSON/Markdown diffs, source adapters, exports, quota/toolchain-pinned runner/API, profiles and golden evaluation. |
 | v4.0 / Spec 1.0 (2026-06) | Formal schema/validator, citations, resource identity, temporal graph, bundle and initial monotonic merge contract. |
 | v3.1 | Temporal source/validity/distillation dimensions. |

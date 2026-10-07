@@ -103,7 +103,12 @@ year (for example `FY2026`) and intervals such as `2020/2024`.
 ### 4.2 Sources and objective provenance
 
 Every source MUST have `id`, `file` and `type`. It MAY add `date`, HTTP(S) `url`, `title`,
-`authors[]`, `publisher`, `version`, `retrieved_at`, `content_sha256`, `license` and `agents[]`.
+`authors[]`, `publisher`, `version`, `retrieved_at`, `content_sha256`, `normalized_sha256`,
+`license` and `agents[]`. `content_sha256` identifies the exact bytes. `normalized_sha256`
+identifies the extracted content: the SHA-256 of the canonical JSON array of
+`[selectors, text_sha256]` pairs of all segments in order, as emitted by `extract_source.py`.
+It stays equal when an editor rewrites the container without changing the extracted text, and
+lets evidence be verified against such a re-saved file.
 Local file names SHOULD be logical or redacted; absolute host paths leak environment data.
 
 Each source agent has `id`, `label`, `type` (`person`, `organization`, `software`) and `role`

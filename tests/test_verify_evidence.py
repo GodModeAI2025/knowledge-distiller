@@ -128,6 +128,38 @@ class VerifyEvidenceTests(unittest.TestCase):
         code, _ = self._run(graph, "--require-all")
         self.assertEqual(code, 1)
 
+    def test_resaved_bytes_match_through_normalized_sha256(self):
+        graph = copy.deepcopy(self.graph)
+        for source in graph["metadata"]["sources"]:
+            source["content_sha256"] = "0" * 64  # the bytes changed, e.g. an editor re-saved
+            source["normalized_sha256"] = self.normalized["source"]["normalized_sha256"]
+        code, report = self._run(graph)
+        self.assertEqual((code, report["counts"]["verified"]), (0, 1))
+        self.assertEqual(report["results"][0]["matched_by"], "normalized_sha256")
+
+    def test_content_sha256_match_is_reported(self):
+        code, report = self._run(self.graph)
+        self.assertEqual(report["results"][0]["matched_by"], "content_sha256")
+
+    def test_explicit_binding_checks_changed_text(self):
+        graph = copy.deepcopy(self.graph)
+        for source in graph["metadata"]["sources"]:
+            source["content_sha256"] = "0" * 64
+        (self.base / "guide.txt").write_text(SOURCE_TEXT.replace("German", "Austrian"), encoding="utf-8")
+        changed = extract_source.extract_source("guide.txt", input_root=self.base)
+        bound_path = self.base / "changed.source.json"
+        bound_path.write_text(json.dumps(changed), encoding="utf-8")
+        source_id = graph["evidence"][0]["source"]
+        code, report = self._run(graph, "--bind", f"{source_id}={bound_path}")
+        self.assertEqual((code, report["counts"]["not_found"]), (1, 1))
+        self.assertEqual(report["results"][0]["matched_by"], "binding")
+        report = verify_evidence.verify(graph, [], {source_id: self.normalized})
+        self.assertEqual(report["counts"]["verified"], 1)
+
+    def test_binding_unknown_source_is_an_error(self):
+        with self.assertRaises(verify_evidence.VerificationError):
+            verify_evidence.verify(self.graph, [], {"no-such-source": self.normalized})
+
     def test_jsonl_adapter_output_is_accepted(self):
         path = self.base / "guide.source.jsonl"
         lines = [{"record_type": "source", "source": self.normalized["source"]}]
