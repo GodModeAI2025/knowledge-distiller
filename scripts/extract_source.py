@@ -30,7 +30,7 @@ from xml.etree import ElementTree as ET
 import strict_json
 
 
-ADAPTER_VERSION = "1.0"
+ADAPTER_VERSION = "1.1"
 DEFAULT_MAX_INPUT_BYTES = 64 * 1024 * 1024
 DEFAULT_MAX_SEGMENT_CHARS = 16_000
 DEFAULT_MAX_SEGMENTS = 10_000
@@ -122,6 +122,17 @@ def _canonical_json(value: Any) -> bytes:
 
 def _sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
+
+
+def normalized_sha256(segments: Iterable[dict[str, Any]]) -> str:
+    """Hash of the normalized content, independent of the container bytes.
+
+    ``content_sha256`` changes whenever an editor rewrites the file, for example when Word
+    saves new revision IDs or metadata. This digest covers only what extraction yields: the
+    ordered segments with their selectors and text hashes. Equal normalized text and
+    structure give an equal digest, whatever the bytes around it.
+    """
+    return _sha256(_canonical_json([[s.get("selectors"), s.get("text_sha256")] for s in segments]))
 
 
 def _looks_like_uri(value: str) -> bool:
@@ -1002,6 +1013,7 @@ def extract_source(
         max_segments=max_segments,
         max_segment_chars=max_segment_chars,
     )
+    source["normalized_sha256"] = normalized_sha256(segments)
     document = {
         "adapter_version": ADAPTER_VERSION,
         "source": source,

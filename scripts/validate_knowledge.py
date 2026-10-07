@@ -38,7 +38,7 @@ KNOWN_METADATA_KEYS = {
 }
 KNOWN_SOURCE_KEYS = {
     "id", "file", "type", "date", "url", "title", "authors", "publisher", "version",
-    "retrieved_at", "content_sha256", "license", "agents",
+    "retrieved_at", "content_sha256", "normalized_sha256", "license", "agents",
 }
 KNOWN_AGENT_KEYS = {"id", "label", "type", "role"}
 KNOWN_CLUSTER_KEYS = {"id", "label", "description", "concepts"}
@@ -652,6 +652,7 @@ def validate(
             _check_iso_date(source.get("date"), f"{where}.date", rep)
         _check_url(source.get("url"), f"{where}.url", rep)
         _check_hash(source.get("content_sha256"), f"{where}.content_sha256", rep)
+        _check_hash(source.get("normalized_sha256"), f"{where}.normalized_sha256", rep)
         for field in ("title", "publisher", "version", "license"):
             if field in source:
                 _check_string(source.get(field), f"{where}.{field}", rep)

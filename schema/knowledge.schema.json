@@ -195,6 +195,7 @@
         "version": {"type": "string"},
         "retrieved_at": {"type": "string", "format": "date-time"},
         "content_sha256": {"$ref": "#/$defs/sha256"},
+        "normalized_sha256": {"$ref": "#/$defs/sha256"},
         "license": {"type": "string"},
         "agents": {"type": "array", "items": {"$ref": "#/$defs/sourceAgent"}}
       }

@@ -113,6 +113,19 @@ class SourceAdapterCase(unittest.TestCase):
             [item["id"] for item in renamed["segments"]],
         )
 
+    def test_normalized_sha256_ignores_container_bytes(self):
+        self.write("crlf.txt", b"\xef\xbb\xbfFirst\r\nline\r\n\r\nSecond paragraph\r\n")
+        self.write("lf.txt", b"First\nline\n\nSecond paragraph\n")
+        self.write("other.txt", b"First\nline\n\nThird paragraph\n")
+        crlf = es.extract_source("crlf.txt", input_root=self.input_root)
+        lf = es.extract_source("lf.txt", input_root=self.input_root)
+        other = es.extract_source("other.txt", input_root=self.input_root)
+        self.assertNotEqual(crlf["source"]["content_sha256"], lf["source"]["content_sha256"])
+        self.assertEqual(crlf["source"]["normalized_sha256"], lf["source"]["normalized_sha256"])
+        self.assertNotEqual(lf["source"]["normalized_sha256"], other["source"]["normalized_sha256"])
+        self.assertEqual(lf["source"]["normalized_sha256"], es.normalized_sha256(lf["segments"]))
+        self.assertEqual(lf["adapter_version"], "1.1")
+
     def test_markdown_uses_exact_canonical_text_positions(self):
         self.write("guide.md", "# Heading\n\nA **Markdown** paragraph.")
         result = es.extract_source("guide.md", input_root=self.input_root)

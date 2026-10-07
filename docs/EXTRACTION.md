@@ -69,7 +69,7 @@ JSON mode emits one document:
 
 ```json
 {
-  "adapter_version": "1.0",
+  "adapter_version": "1.1",
   "source": {
     "id": "source-<24 hex>",
     "file": "tables/data.csv",
@@ -77,6 +77,7 @@ JSON mode emits one document:
     "type": "csv",
     "mime_type": "text/csv",
     "content_sha256": "<64 hex of the original bytes>",
+    "normalized_sha256": "<64 hex of the normalized segments>",
     "size_bytes": 1234
   },
   "segment_count": 2,
@@ -202,10 +203,19 @@ Once a graph exists, the anchors can be checked mechanically against the same ad
 
 ```bash
 python3 scripts/verify_evidence.py graph.knowledge.json normalized.source.json [--require-all] [--json]
+python3 scripts/verify_evidence.py graph.knowledge.json --bind source-1=current.source.json --json
 ```
 
-Evidence is paired with a normalized source only when the graph source carries the identical
-`content_sha256`. `TextQuoteSelector.exact` and any `excerpt` must occur in the extracted text
+Evidence is paired with a normalized source in this order: an explicit
+`--bind SOURCE_ID=PATH`, then an identical `content_sha256`, then an identical
+`normalized_sha256`. The second covers the original bytes; the third covers a file whose
+container was rewritten without changing the extracted content, for example a Word document
+that was opened and saved again. `normalized_sha256` is the SHA-256 of the canonical JSON array
+of `[selectors, text_sha256]` per segment in order (`extract_source.normalized_sha256()`).
+A binding is the caller's statement that this extraction is the named graph source even when
+its content changed, so that a tool can count which anchors still resolve in a newer version.
+Every result reports `matched_by` (`binding`, `content_sha256` or `normalized_sha256`); binding a
+source ID the graph does not declare is an error. `TextQuoteSelector.exact` and any `excerpt` must occur in the extracted text
 (compared after Unicode NFC normalization, whitespace runs as one space), a `TextPositionSelector`
 must lie inside one text segment and match its `excerpt`, and `FragmentSelector`, `CsvSelector` or
 `JsonPointerSelector` must equal a selector the adapter emitted. A cell range inside an emitted row
