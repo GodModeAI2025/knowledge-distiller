@@ -610,7 +610,7 @@ def _write_markdown(output: Path, content: str) -> None:
             # On the descriptor, not on the name: the mode belongs to
             # the file just written, not to whatever carries that name
             # by the time the call runs.
-            os.fchmod(handle.fileno(), 0o644)
+            os.fchmod(handle.fileno(), 0o600)
         os.replace(temp_name, output)
         temp_name = None
     finally:

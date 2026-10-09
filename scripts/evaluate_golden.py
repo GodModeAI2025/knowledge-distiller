@@ -22,6 +22,7 @@ sys.path.insert(0, str(SCRIPT_DIR))
 import build_graph  # noqa: E402
 import strict_json  # noqa: E402
 import validate_knowledge as validator  # noqa: E402
+import run_pipeline  # noqa: E402
 
 MANIFEST_VERSION = "1.0"
 MAX_FILE_BYTES = 64 * 1024 * 1024
@@ -40,15 +41,43 @@ class EvaluationError(ValueError):
     pass
 
 
-def _read_json(path: Path) -> Any:
-    if not path.is_file():
-        raise EvaluationError(f"not a regular file: {path}")
-    if path.stat().st_size > MAX_FILE_BYTES:
-        raise EvaluationError(f"file exceeds {MAX_FILE_BYTES} byte limit: {path}")
+def _input_path(path: Path, input_root: Path) -> tuple[Path, str, tuple[int, int]]:
+    """Keep lexical child names: resolving them would hide symlink traversal."""
+    declared_root = input_root.expanduser().absolute()
+    # Resolve OS aliases in the parent (e.g. /var on macOS), never the
+    # selected root itself. A racing root symlink must not choose a new boundary.
+    root = declared_root.parent.resolve(strict=True) / declared_root.name
+    fd = run_pipeline._open_absolute_directory(root)
     try:
-        return strict_json.load_path(path)
-    except strict_json.StrictJsonError as exc:
-        raise EvaluationError(f"invalid strict JSON in {path}: {exc}") from exc
+        identity = os.fstat(fd)
+    finally:
+        os.close(fd)
+    absolute = Path(os.path.abspath(path.expanduser()))
+    for candidate in (declared_root, root):
+        try:
+            relative = absolute.relative_to(candidate)
+            break
+        except ValueError:
+            continue
+    else:
+        raise EvaluationError("input path is outside the configured input root")
+    if not relative.parts:
+        raise EvaluationError("input must be a regular file")
+    return root, relative.as_posix(), (identity.st_dev, identity.st_ino)
+
+
+def _read_json(path: Path, input_root: Path | None = None) -> Any:
+    root = input_root if input_root is not None else path.absolute().parent
+    try:
+        anchor, name, identity = _input_path(path, root)
+        fd = run_pipeline._open_input_fd(anchor, name, identity)
+        try:
+            data = run_pipeline._read_fd_bounded(fd, MAX_FILE_BYTES)
+        finally:
+            os.close(fd)
+        return strict_json.loads(data, source=str(path))
+    except (strict_json.StrictJsonError, run_pipeline.PipelineError, OSError) as exc:
+        raise EvaluationError(f"cannot read confined JSON input: {exc}") from exc
 
 
 def _canonical(value: Any) -> str:
@@ -142,7 +171,9 @@ def _stable_ids(doc: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def evaluate_case(case: dict[str, Any], base_dir: Path) -> dict[str, Any]:
+def evaluate_case(case: dict[str, Any], base_dir: Path, input_root: Path | None = None) -> dict[str, Any]:
+    if not isinstance(case, dict):
+        raise EvaluationError("each case must be an object")
     case_id = case.get("id")
     graph_value = case.get("graph")
     if not isinstance(case_id, str) or not case_id:
@@ -151,8 +182,8 @@ def evaluate_case(case: dict[str, Any], base_dir: Path) -> dict[str, Any]:
         raise EvaluationError(f"case {case_id}: graph must be a local path")
     graph_path = Path(graph_value)
     if not graph_path.is_absolute():
-        graph_path = (base_dir / graph_path).resolve()
-    doc = _read_json(graph_path)
+        graph_path = base_dir / graph_path
+    doc = _read_json(graph_path, input_root if input_root is not None else base_dir)
     if not isinstance(doc, dict):
         raise EvaluationError(f"case {case_id}: graph must contain a JSON object")
 
@@ -206,14 +237,15 @@ def evaluate_case(case: dict[str, Any], base_dir: Path) -> dict[str, Any]:
     }
 
 
-def evaluate_manifest(path: Path) -> dict[str, Any]:
-    manifest = _read_json(path)
+def evaluate_manifest(path: Path, input_root: Path | None = None) -> dict[str, Any]:
+    root = input_root if input_root is not None else path.absolute().parent
+    manifest = _read_json(path, root)
     if not isinstance(manifest, dict) or manifest.get("version") != MANIFEST_VERSION:
         raise EvaluationError(f"manifest version must be {MANIFEST_VERSION}")
     cases = manifest.get("cases")
     if not isinstance(cases, list) or not cases:
         raise EvaluationError("manifest requires at least one case")
-    results = [evaluate_case(case, path.resolve().parent) for case in cases]
+    results = [evaluate_case(case, path.absolute().parent, root) for case in cases]
     return {
         "version": MANIFEST_VERSION,
         "passed": all(item["passed"] for item in results),
@@ -231,9 +263,13 @@ def evaluate_manifest(path: Path) -> dict[str, Any]:
     }
 
 
-def _protected_input_paths(manifest_path: Path) -> list[Path]:
+def _protected_input_paths(manifest_path: Path, input_root: Path | None = None,
+                           evaluated: dict[str, Any] | None = None) -> list[Path]:
     """Return the manifest and every local graph it references for output collision checks."""
-    manifest = _read_json(manifest_path)
+    root = input_root if input_root is not None else manifest_path.absolute().parent
+    # Use the evaluated references for CLI output checks, not a second manifest
+    # read that could describe different inputs after a concurrent replacement.
+    manifest = evaluated if evaluated is not None else _read_json(manifest_path, root)
     paths = [manifest_path.resolve()]
     if not isinstance(manifest, dict) or not isinstance(manifest.get("cases"), list):
         return paths
@@ -245,8 +281,9 @@ def _protected_input_paths(manifest_path: Path) -> list[Path]:
             continue
         graph_path = Path(value)
         if not graph_path.is_absolute():
-            graph_path = manifest_path.resolve().parent / graph_path
-        paths.append(graph_path.resolve())
+            graph_path = manifest_path.absolute().parent / graph_path
+        anchor, name, _ = _input_path(graph_path, root)
+        paths.append(anchor / name)
     return paths
 
 
@@ -279,7 +316,7 @@ def _atomic_report_write(output: Path, payload: str, protected: list[Path]) -> N
             # On the descriptor, not on the name: the mode belongs to
             # the file just written, not to whatever carries that name
             # by the time the call runs.
-            os.fchmod(handle.fileno(), 0o644)
+            os.fchmod(handle.fileno(), 0o600)
         os.replace(temp_name, output)
         temp_name = None
     finally:
@@ -294,14 +331,16 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Evaluate local graphs against explicit golden labels")
     parser.add_argument("manifest", help="path to a golden_cases.json manifest")
     parser.add_argument("--output", help="optional JSON report path")
+    parser.add_argument("--input-root", help="Readable manifest/graph boundary (default: manifest directory)")
     args = parser.parse_args(argv)
     try:
-        result = evaluate_manifest(Path(args.manifest))
+        root = Path(args.input_root) if args.input_root else None
+        result = evaluate_manifest(Path(args.manifest), root)
         payload = json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
         if args.output:
             manifest_path = Path(args.manifest)
             _atomic_report_write(
-                Path(args.output), payload, _protected_input_paths(manifest_path)
+                Path(args.output), payload, _protected_input_paths(manifest_path, root, result)
             )
         else:
             print(payload, end="")

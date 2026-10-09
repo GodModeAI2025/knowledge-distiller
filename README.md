@@ -95,7 +95,7 @@ python3 scripts/run_pipeline.py build claude-skills-guide.knowledge.json \
   --input-root examples --output-root /tmp/kd-runs --artifacts json md bundle
 
 # Run the shipped golden regression and default test suite
-python3 scripts/evaluate_golden.py eval/golden_cases.json
+python3 scripts/evaluate_golden.py eval/golden_cases.json --input-root .
 python3 -m pytest -q
 
 # Also activate the optional headless-Chrome security/rendering test

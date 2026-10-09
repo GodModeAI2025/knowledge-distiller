@@ -10,6 +10,7 @@ import shutil
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -37,8 +38,8 @@ class GoldenEvaluationTests(unittest.TestCase):
                         evaluate_golden.evaluate_manifest(path)
 
     def test_shipped_golden_case_passes_exactly(self):
-        first = evaluate_golden.evaluate_manifest(MANIFEST)
-        second = evaluate_golden.evaluate_manifest(MANIFEST)
+        first = evaluate_golden.evaluate_manifest(MANIFEST, ROOT)
+        second = evaluate_golden.evaluate_manifest(MANIFEST, ROOT)
         self.assertEqual(first, second)
         self.assertTrue(first["passed"])
         case = first["cases"][0]
@@ -74,6 +75,73 @@ class GoldenEvaluationTests(unittest.TestCase):
             path.write_text(json.dumps(manifest), encoding="utf-8")
             with self.assertRaisesRegex(evaluate_golden.EvaluationError, "local path"):
                 evaluate_golden.evaluate_manifest(path)
+
+    def test_graphs_cannot_escape_default_root_by_parent_or_absolute_path(self):
+        with tempfile.TemporaryDirectory() as temp:
+            base = Path(temp)
+            manifests = base / "eval"
+            manifests.mkdir()
+            outside = base / "graph.knowledge.json"
+            shutil.copyfile(FIXTURE, outside)
+            manifest = json.loads(MANIFEST.read_text())
+            for value in ("../graph.knowledge.json", str(outside)):
+                manifest["cases"][0]["graph"] = value
+                path = manifests / "golden.json"
+                path.write_text(json.dumps(manifest))
+                with self.subTest(value=value), self.assertRaisesRegex(evaluate_golden.EvaluationError, "outside"):
+                    evaluate_golden.evaluate_manifest(path)
+                self.assertTrue(evaluate_golden.evaluate_manifest(path, base)["passed"])
+
+    def test_symlink_graph_and_directory_are_rejected_even_inside_root(self):
+        with tempfile.TemporaryDirectory() as temp:
+            base = Path(temp)
+            actual = base / "actual"
+            actual.mkdir()
+            shutil.copyfile(FIXTURE, actual / "graph.knowledge.json")
+            (base / "linked").symlink_to(actual, target_is_directory=True)
+            (base / "graph.knowledge.json").symlink_to(actual / "graph.knowledge.json")
+            manifest = json.loads(MANIFEST.read_text())
+            for value in ("linked/graph.knowledge.json", "graph.knowledge.json"):
+                manifest["cases"][0]["graph"] = value
+                path = base / "golden.json"
+                path.write_text(json.dumps(manifest))
+                with self.subTest(value=value), self.assertRaisesRegex(evaluate_golden.EvaluationError, "symlink"):
+                    evaluate_golden.evaluate_manifest(path)
+
+    def test_manifest_outside_explicit_root_is_rejected(self):
+        with tempfile.TemporaryDirectory() as temp:
+            with self.assertRaisesRegex(evaluate_golden.EvaluationError, "outside"):
+                evaluate_golden.evaluate_manifest(MANIFEST, Path(temp))
+
+    def test_symlink_root_is_rejected(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "linked-root"
+            root.symlink_to(ROOT, target_is_directory=True)
+            with self.assertRaisesRegex(evaluate_golden.EvaluationError, "symlink"):
+                evaluate_golden.evaluate_manifest(root / "eval/golden_cases.json", root)
+
+    def test_outside_graph_is_rejected_before_any_graph_bytes_are_read(self):
+        with tempfile.TemporaryDirectory() as temp:
+            base = Path(temp)
+            case = {"id": "outside", "graph": str(FIXTURE), "expected": {}}
+            with patch.object(evaluate_golden.run_pipeline, "_read_fd_bounded") as read:
+                with self.assertRaisesRegex(evaluate_golden.EvaluationError, "outside"):
+                    evaluate_golden.evaluate_case(case, base)
+                read.assert_not_called()
+
+    def test_protected_paths_use_evaluated_manifest_not_a_later_replacement(self):
+        with tempfile.TemporaryDirectory() as temp:
+            base = Path(temp)
+            path = base / "golden.json"
+            path.write_text('{"cases":[{"graph":"changed.json"}]}')
+            result = {"cases": [{"graph": "original.json"}]}
+            protected = evaluate_golden._protected_input_paths(path, evaluated=result)
+            self.assertIn(base.resolve() / "original.json", protected)
+            self.assertNotIn(base.resolve() / "changed.json", protected)
+
+    def test_cli_explicit_root_can_evaluate_shipped_manifest(self):
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(evaluate_golden.main([str(MANIFEST), "--input-root", str(ROOT)]), 0)
 
     def test_report_output_cannot_overwrite_manifest_or_graph(self):
         with tempfile.TemporaryDirectory() as temp:
