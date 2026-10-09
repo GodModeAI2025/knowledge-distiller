@@ -214,7 +214,7 @@ def _write_text(root: Path, target: Path, content: str) -> None:
             # On the descriptor, not on the name: the mode belongs to
             # the file just written, not to whatever carries that name
             # by the time the call runs.
-            os.fchmod(handle.fileno(), 0o644)
+            os.fchmod(handle.fileno(), 0o600)
         os.replace(tmp_name, target)
         tmp_name = None
     finally:
